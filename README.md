@@ -1,8 +1,15 @@
+# fork
+
+this is a fork of dmenu-wl
+
 # dmenu-wl - dynamic menu
+
 dmenu-wl is an efficient dynamic menu for wayland (wlroots).
 
 ## TODO
+
 Missing dmenu (for X) features:
+
 - Echo (non-interactive use)
 - Handling pagination
 - Vertical layout
@@ -12,16 +19,19 @@ Missing dmenu (for X) features:
 - Choice (-c) -mode
 
 Other TODO items:
+
 - Cleaner exiting
 - Generate protocol files with `wayland-scanner`
 
 ## Requirements
+
 Requires a compositor which implements wlr-layer-shell and xdg-output
 protocols. Basically this means a wlroots-based compositor is needed.
 Gnome and KDE are therefore [not supported](https://github.com/nyyManni/dmenu-wayland/issues/16).
 Tested with sway 1.0.
 
 Required libraries (and headers):
+
 - wayland-client
 - cairo
 - pango-1.0
@@ -30,8 +40,8 @@ Required libraries (and headers):
 - glib-2.0
 - gobject-2.0
 
-
 ## Installation
+
 ```
     mkdir build
     meson build
@@ -46,10 +56,11 @@ Required libraries (and headers):
 Add to sway configuration (`~/.config/sway/config`) to run the launcher on Win+D.
 
     bindsym $mod+d exec dmenu-wl_run -i
-    
+
 ### ... from the command-line
 
 See the man page for details.
+
 ```
 Usage: dmenu-wl [OPTION]...
 
