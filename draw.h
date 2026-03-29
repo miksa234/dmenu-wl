@@ -20,7 +20,7 @@ struct monitor_info {
 	int32_t logical_width;
 	int32_t logical_height;
 	double scale;
-	
+
 	char name[MAX_MONITOR_NAME_LEN];
 
 	enum wl_output_subpixel subpixel;
@@ -65,7 +65,7 @@ struct dmenu_panel {
 	/* struct monitor_info monitor; */
 	int selected_monitor;
 	char *selected_monitor_name;
-	
+
 	struct monitor_info *monitor;
 	struct display_info display_info;
 
@@ -79,6 +79,11 @@ struct dmenu_panel {
 
 	int32_t width;
 	int32_t height;
+
+    int32_t bar_width;
+
+    int32_t x_offset;
+    int32_t y_offset;
 
 	int repeat_timer;
 	int repeat_delay;

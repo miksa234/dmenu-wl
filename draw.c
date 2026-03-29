@@ -159,7 +159,11 @@ void dmenu_draw(struct dmenu_panel *panel) {
 	double factor = m->scale / ((double)m->physical_width
 											/ m->logical_width);
 
-	int32_t width = round_to_int(m->physical_width * factor);
+    int32_t logical_bar = (panel->bar_width > 0)
+        ? panel->bar_width
+        : m->logical_width - panel->x_offset;
+    int32_t width = round_to_int(logical_bar * factor);
+
 	int32_t height = panel->height * m->scale;
 
 	if (panel->draw) {
@@ -577,13 +581,24 @@ void dmenu_init_panel(struct dmenu_panel *panel, int32_t height, bool bottom) {
 											  ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY,
 											  "panel");
 
-	zwlr_layer_surface_v1_set_size(panel->surface.layer_surface,
-								   panel->monitor->logical_width, panel->height);
-	zwlr_layer_surface_v1_set_anchor(panel->surface.layer_surface,
-									 ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
-									 ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT |
-									 (bottom ? ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM
-									  : ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP));
+    int32_t logical_bar = (panel->bar_width > 0)
+        ? panel->bar_width
+        : panel->monitor->logical_width - panel->x_offset;
+
+    zwlr_layer_surface_v1_set_size(panel->surface.layer_surface,
+                                   logical_bar, panel->height);
+    // Drop ANCHOR_RIGHT so the compositor doesn't stretch to fill the screen.
+    // ANCHOR_LEFT + margin-left = x offset.
+    zwlr_layer_surface_v1_set_anchor(panel->surface.layer_surface,
+                                     ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
+                                     (bottom ? ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM
+                                      : ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP));
+    // top, right, bottom, left
+    zwlr_layer_surface_v1_set_margin(panel->surface.layer_surface,
+                                 bottom ? 0 : panel->y_offset,   /* top    */
+                                 0,                               /* right  */
+                                 bottom ? panel->y_offset : 0,   /* bottom */
+                                 panel->x_offset);                /* left   */
 
 
 	zwlr_layer_surface_v1_add_listener(panel->surface.layer_surface,

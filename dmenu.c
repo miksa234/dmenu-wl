@@ -53,6 +53,10 @@ static uint32_t color_selected_fg = 0xeeeeeeff;
 
 static int32_t panel_height = 20;
 
+static int32_t x_offset   = 0;   /* horizontal start; 0 = left edge   */
+static int32_t y_offset   = 0;   /* horizontal start; 0 = left edge   */
+static int32_t bar_width   = 0;   /* 0 means use full monitor width     */
+
 static void appenditem(Item *item, Item **list, Item **last);
 static char *fstrstr(const char *s, const char *sub);
 static void insert(const char *s, ssize_t n);
@@ -392,6 +396,12 @@ main(int argc, char **argv) {
       panel_height = atoi(argv[++i]);
     else if (!strcmp(argv[i], "-l") || !strcmp(argv[i], "--lines"))
       lines = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "-x") || !strcmp(argv[i], "--x-offset"))
+      x_offset = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "-y") || !strcmp(argv[i], "--y-offset"))
+      y_offset = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "-w") || !strcmp(argv[i], "--width"))
+      bar_width = atoi(argv[++i]);
     else if (!strcmp(argv[i], "-m") || !strcmp(argv[i], "--monitor")) {
 		++i;
 		bool is_num = true;
@@ -442,6 +452,10 @@ main(int argc, char **argv) {
 	dmenu.selected_monitor_name = selected_monitor_name;
 	dmenu_init_panel(&dmenu, panel_height, show_in_bottom);
 
+    dmenu.x_offset  = x_offset;
+    dmenu.y_offset = y_offset;
+    dmenu.bar_width = (bar_width > 0) ? bar_width
+                                      : dmenu.monitor->logical_width - x_offset;
 
 	dmenu.on_keyevent = keypress;
 	dmenu.on_keyrepeat = keyrepeat;
@@ -452,11 +466,17 @@ main(int argc, char **argv) {
 
 	double factor = monitor->scale / ((double)monitor->physical_width / monitor->logical_width);
 
-	window_config.height =round_to_int(dmenu.height / ((double)monitor->physical_width
+	window_config.height = round_to_int(dmenu.height / ((double)monitor->physical_width
 												  / monitor->logical_width));
 	window_config.height *= monitor->scale;
 
-	window_config.width = round_to_int(monitor->physical_width * factor);
+    {
+        double logical_bar_width = (bar_width > 0)
+            ? bar_width
+            : monitor->logical_width - x_offset;
+        window_config.width = round_to_int(logical_bar_width * factor);
+    }
+
 	get_text_size(dmenu.surface.cairo, font, NULL, &window_config.text_height,
 				  NULL, monitor->scale, false, "Aj");
 	window_config.text_y = (window_config.height / 2.0) - (window_config.text_height / 2.0);
@@ -595,6 +615,12 @@ usage(void) {
     printf("  -m,  --monitor MONITOR            dmenu appears on the given Xinerama screen\n");
     printf("                                      (does nothing on wayland, supported for)\n");
     printf("                                      compatibility with dmenu.\n");
+    printf("  -x,  --x-offset N                 horizontal offset from the left edge\n");
+    printf("                                      of the monitor (pixels)\n");
+    printf("  -y,  --y-offset N                 horizontal offset from the top\n");
+    printf("                                      of the monitor (pixels)\n");
+    printf("  -w,  --width N                    bar width in pixels; 0 = full monitor\n");
+    printf("                                      width minus x-offset (default)\n");
     printf("  -p,  --prompt  PROMPT             prompt to be displayed to the left of the\n");
     printf("                                      input field\n");
     printf("  -po, --prompt-only  PROMPT        same as -p but don't wait for stdin\n");
