@@ -4,11 +4,18 @@ dmenu-wl \- dynamic menu
 .SH SYNOPSIS
 .B dmenu-wl
 .RB [ \-b ]
+.RB [ \-t ]
 .RB [ \-i ]
 .RB [ \-l
 .IR lines ]
 .RB [ \-m
 .IR monitor ]
+.RB [ \-mw
+.IR width ]
+.RB [ \-bw
+.IR width ]
+.RB [ \-bc
+.IR color ]
 .RB [ \-p
 .IR prompt ]
 .RB [ \-fn
@@ -37,6 +44,10 @@ menu (or displays a notification if using -e). When the user selects an item or
 enters any text and presses Return, their choice is printed to standard output
 and dmenu-wl terminates.
 .P
+By default, the menu floats in the center of the selected output. Its width is
+the greater of the natural content width and the configured minimum width,
+clamped to the output width.
+.P
 .B dmenu-wl_run
 is a dmenu-wl script used by dwm which lists programs in the user's PATH and
 executes the selected item.
@@ -57,7 +68,10 @@ same as -e but text is aligned to the right.
 when using -e, close the message after the given number of seconds
 .TP
 .B \-b
-dmenu appears at the bottom of the screen.
+dmenu appears as a full-width bar at the bottom of the screen.
+.TP
+.B \-t
+dmenu appears as a full-width bar at the top of the screen.
 .TP
 .BI \-h " height"
 dmenu is drawn at least the given number of pixels high.
@@ -70,6 +84,18 @@ dmenu lists items vertically, within the given number of lines.
 .TP
 .BI \-m " monitor"
 dmenu appears on the given monitor (0-based index or monitor name)
+.TP
+.BI \-mw " width"
+sets the minimum width of the centered menu in logical pixels. The default is
+600. The menu may grow to fit its prompt and widest item.
+.TP
+.BI \-bw " width"
+sets the border width in logical pixels. The default is 3. A width of 0 disables
+the border. Borders are drawn around centered menus and full-width bars.
+.TP
+.BI \-bc " color"
+sets the border color. The default is #642b2b. Both #RRGGBB and #RRGGBBAA are
+supported.
 .TP
 .BI \-p " prompt"
 defines the prompt to be displayed to the left of the input field.
@@ -116,10 +142,10 @@ returning success.
 Confirm input.  Prints the input text to standard output and exits, returning
 success.
 .TP
+.B Control\-Return
+Print the selected item to standard output without closing the menu.
+.TP
 .B Escape (Control\-c)
 Exit without selecting an item, returning failure.
-.TP
-.B Control\-y
-Paste the current selection into the input field.
 .SH SEE ALSO
 .BR dwm (1)

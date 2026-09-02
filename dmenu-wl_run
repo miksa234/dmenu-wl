@@ -1,2 +1,2 @@
 #!/bin/sh
-dmenu-wl_path | dmenu-wl "$@" | ${SHELL:-"/bin/sh"} &
+./build/dmenu-wl_path | ./build/dmenu-wl -l 15 -i"$@" | ${SHELL:-"/bin/sh"} &

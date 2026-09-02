@@ -26,13 +26,15 @@ pangocairo          = dependency('pangocairo')
 rt                  = cc.find_library('rt')
 wayland_client      = dependency('wayland-client')
 wayland_protos      = dependency('wayland-protocols')
-wayland_scanner_dep = dependency('wayland-scanner')
-wayland_scanner     = find_program(
-  wayland_scanner_dep.get_pkgconfig_variable('wayland_scanner')
-)
+wayland_scanner     = find_program('wayland-scanner')
 xkbcommon = dependency('xkbcommon')
 
-wl_protocol_dir = wayland_protos.get_pkgconfig_variable('pkgdatadir')
+wl_protocol_dir = run_command(
+  'pkg-config',
+  '--variable=pkgdatadir',
+  'wayland-protocols',
+  check: true,
+).stdout().strip()
 
 protocols = [
   [wl_protocol_dir, 'stable/xdg-shell/xdg-shell.xml'],
@@ -79,4 +81,3 @@ executable('dmenu-wl_path', 'dmenu_path.c', install: true)
 install_data('dmenu-wl_run', install_dir: get_option('bindir'))
 
 install_man('dmenu-wl.1')
-

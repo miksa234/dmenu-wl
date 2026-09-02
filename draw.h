@@ -1,5 +1,6 @@
 /* See LICENSE file for copyright and license details. */
 #include <stdbool.h>
+#include <stddef.h>
 #include <wayland-client.h>
 #include <cairo/cairo.h>
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -13,6 +14,18 @@
 enum { ColBG, ColFG, ColBorder, ColLast };
 
 struct dmenu_panel;
+
+struct draw_buffer {
+	struct dmenu_panel *panel;
+	cairo_t *cairo;
+	cairo_surface_t *cairo_surface;
+	struct wl_buffer *buffer;
+	void *data;
+	size_t size;
+	int32_t width;
+	int32_t height;
+	bool busy;
+};
 
 struct monitor_info {
 	int32_t physical_width;
@@ -51,11 +64,9 @@ struct keyboard_info {
 };
 
 struct surface {
-	cairo_t *cairo;
-	struct wl_buffer *buffer;
 	struct wl_surface *surface;
 	struct wl_shm *shm;
-	void *shm_data;
+	struct draw_buffer buffers[2];
 	struct zwlr_layer_shell_v1 *layer_shell;
 	struct zwlr_layer_surface_v1 *layer_surface;
 };
@@ -79,17 +90,24 @@ struct dmenu_panel {
 
 	int32_t width;
 	int32_t height;
+	bool bar;
+	bool bottom;
+	bool interactive;
+	bool configured;
+	bool closed;
+	bool redraw_pending;
 
 	int repeat_timer;
 	int repeat_delay;
 	int repeat_period;
 	enum wl_keyboard_key_state repeat_key_state;
 	xkb_keysym_t repeat_sym;
+	uint32_t repeat_key;
 
 	bool running;
 };
 
-void dmenu_init_panel(struct dmenu_panel *, int32_t, bool);
+void dmenu_init_panel(struct dmenu_panel *, int32_t, int32_t, bool, bool, bool);
 void dmenu_draw(struct dmenu_panel *);
 void dmenu_show(struct dmenu_panel *);
 void dmenu_close(struct dmenu_panel *);
