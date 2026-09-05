@@ -134,11 +134,17 @@ following keys are recognized:
 .B Tab (Control\-i)
 Copy the selected item to the input field.
 .TP
-.B Return (Control\-j)
+.B Control\-j
+Select the next matching item without moving the input cursor.
+.TP
+.B Control\-k
+Select the previous matching item without moving the input cursor.
+.TP
+.B Return
 Confirm selection.  Prints the selected item to standard output and exits,
 returning success.
 .TP
-.B Shift\-Return (Control\-Shift\-j)
+.B Shift\-Return
 Confirm input.  Prints the input text to standard output and exits, returning
 success.
 .TP

@@ -149,10 +149,8 @@ void keypress(struct dmenu_panel *panel, enum wl_keyboard_key_state state,
 			sym = XKB_KEY_Delete;
 			break;
 		case XKB_KEY_k:
-			text[cursor] = '\0';
-			match();
-			dmenu_draw(panel);
-			return;
+			sym = XKB_KEY_Up;
+			break;
 		case XKB_KEY_u:
 			memmove(text, text + cursor, len - cursor + 1);
 			cursor = 0;
@@ -171,8 +169,7 @@ void keypress(struct dmenu_panel *panel, enum wl_keyboard_key_state state,
 			dmenu_draw(panel);
 			return;
 		case XKB_KEY_j:
-			sym = XKB_KEY_Return;
-			ctrl = false;
+			sym = XKB_KEY_Down;
 			break;
 		case XKB_KEY_g:
 		case XKB_KEY_c:

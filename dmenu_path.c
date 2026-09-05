@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#define CACHE ".dmenu_cache"
+#define CACHE ".cache/dmenu_run"
 
 static void die(const char *s);
 static int qstrcmp(const void *a, const void *b);
