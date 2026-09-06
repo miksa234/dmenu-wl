@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 static uint32_t color_bg = 0x000000f2;
 static uint32_t color_fg = 0xffffffff;
 static uint32_t color_input_bg = 0x000000ff;

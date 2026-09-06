@@ -1,5 +1,8 @@
-build/
-*.o
-config.h
 .direnv/
 .envrc
+
+*.o
+config.h
+build/
+
+compile_commands.json
