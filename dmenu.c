@@ -1,13 +1,10 @@
 /* See LICENSE file for copyright and license details. */
 #include "draw.h"
 #include <ctype.h>
-#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-#include <unistd.h>
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 
@@ -26,8 +23,6 @@ struct Item {
     int32_t width;
 };
 
-typedef enum { LEFT, RIGHT, CENTRE } TextPosition;
-
 const char *progname;
 
 static void appenditem (Item *item, Item **list, Item **last);
@@ -38,7 +33,6 @@ static void calcoffsets (void);
 static void measure_layout (int32_t *, int32_t *);
 static size_t nextrune (int incr);
 static void readstdin (void);
-static void alarmhandler (int signum);
 static void usage (void);
 static int retcode = EXIT_SUCCESS;
 static int selected_monitor = 0;
@@ -49,18 +43,12 @@ static char text_[BUFSIZ];
 static int itemcount = 0;
 static size_t cursor = 0;
 static const char *prompt = NULL;
-static bool message = false;
-static bool nostdin = false;
-static bool returnearly = false;
 static enum dmenu_position panel_position;
-static bool done = false;
-static TextPosition messageposition = LEFT;
 static Item *items = NULL;
 static Item *matches, *sel;
-static Item *prev, *curr, *next;
+static Item *curr;
 static Item *leftmost, *rightmost;
 static Item *page_start;
-static struct dmenu_panel *active_panel;
 
 static int (*fstrncmp) (const char *, const char *, size_t) = strncmp;
 
@@ -317,30 +305,6 @@ draw_content (cairo_t *cairo, int32_t width, double scale)
 
     cairo_set_source_u32 (cairo, color_bg);
     cairo_paint (cairo);
-    if (message) {
-        const char *value = items ? items->text : "";
-        get_text_size (cairo, font, &text_width, NULL, NULL, scale, false, "%s",
-                       value);
-        switch (messageposition) {
-            case CENTRE:
-                x = MAX (0, (width - text_width) / 2);
-                break;
-            case RIGHT:
-                x = MAX (0, width - text_width - 10 * scale);
-                break;
-            default:
-                x = 10 * scale;
-        }
-        cairo_save (cairo);
-        cairo_rectangle (cairo, 0, 0, width, row_height);
-        cairo_clip (cairo);
-        cairo_move_to (cairo, x, text_y);
-        cairo_set_source_u32 (cairo, color_fg);
-        pango_printf (cairo, font, scale, false, "%s", value);
-        cairo_restore (cairo);
-        return;
-    }
-
     if (prompt) {
         x = draw_text (cairo, width, row_height, prompt, 0, scale,
                        color_prompt_fg, color_prompt_bg, 6);
@@ -585,45 +549,33 @@ main (int argc, char **argv)
     progname = "dmenu";
     panel_position = position;
     for (i = 1; i < argc; i++) {
-        if (!strcmp (argv[i], "-v") || !strcmp (argv[i], "--version")) {
+        if (!strcmp (argv[i], "-v")) {
             fputs ("dmenu-wl-" VERSION
                    ", © 2006-2018 dmenu engineers, see LICENSE for "
                    "details\n",
                    stdout);
             exit (EXIT_SUCCESS);
-        } else if (!strcmp (argv[i], "-b") || !strcmp (argv[i], "--bottom"))
+        } else if (!strcmp (argv[i], "-b"))
             panel_position = DMENU_POSITION_BOTTOM;
-        else if (!strcmp (argv[i], "-t") || !strcmp (argv[i], "--top"))
+        else if (!strcmp (argv[i], "-t"))
             panel_position = DMENU_POSITION_TOP;
-        else if (!strcmp (argv[i], "-c") || !strcmp (argv[i], "--center"))
+        else if (!strcmp (argv[i], "-c"))
             panel_position = DMENU_POSITION_CENTER;
-        else if (!strcmp (argv[i], "-e") || !strcmp (argv[i], "--echo"))
-            message = true;
-        else if (!strcmp (argv[i], "-ec") || !strcmp (argv[i], "--echo-centre"))
-            message = true, messageposition = CENTRE;
-        else if (!strcmp (argv[i], "-er") || !strcmp (argv[i], "--echo-right"))
-            message = true, messageposition = RIGHT;
-        else if (!strcmp (argv[i], "-i") || !strcmp (argv[i], "--insensitive"))
+        else if (!strcmp (argv[i], "-i"))
             fstrncmp = strncasecmp;
-        else if (!strcmp (argv[i], "-r") || !strcmp (argv[i], "--return-early"))
-            returnearly = true;
         else if (i == argc - 1) {
             usage ();
         }
         /* opts that need 1 arg */
-        else if (!strcmp (argv[i], "-et")
-                 || !strcmp (argv[i], "--echo-timeout"))
-            timeout = parse_nonnegative ("--echo-timeout", argv[++i]);
-        else if (!strcmp (argv[i], "-h") || !strcmp (argv[i], "--height"))
-            panel_height = parse_nonnegative ("--height", argv[++i]);
-        else if (!strcmp (argv[i], "-l") || !strcmp (argv[i], "--lines"))
-            lines = parse_nonnegative ("--lines", argv[++i]);
-        else if (!strcmp (argv[i], "-mw") || !strcmp (argv[i], "--min-width"))
-            min_width = parse_nonnegative ("--min-width", argv[++i]);
-        else if (!strcmp (argv[i], "-bw")
-                 || !strcmp (argv[i], "--border-width"))
-            border_width = parse_nonnegative ("--border-width", argv[++i]);
-        else if (!strcmp (argv[i], "-m") || !strcmp (argv[i], "--monitor")) {
+        else if (!strcmp (argv[i], "-h"))
+            panel_height = parse_nonnegative ("-h", argv[++i]);
+        else if (!strcmp (argv[i], "-l"))
+            lines = parse_nonnegative ("-l", argv[++i]);
+        else if (!strcmp (argv[i], "-mw"))
+            min_width = parse_nonnegative ("-mw", argv[++i]);
+        else if (!strcmp (argv[i], "-bw"))
+            border_width = parse_nonnegative ("-bw", argv[++i]);
+        else if (!strcmp (argv[i], "-m")) {
             ++i;
             bool is_num = true;
             for (size_t j = 0; j < strlen (argv[i]); ++j) {
@@ -638,39 +590,26 @@ main (int argc, char **argv)
                 selected_monitor = -1;
                 selected_monitor_name = argv[i];
             }
-        } else if (!strcmp (argv[i], "-p") || !strcmp (argv[i], "--prompt"))
+        } else if (!strcmp (argv[i], "-p"))
             prompt = argv[++i];
-        else if (!strcmp (argv[i], "-po") || !strcmp (argv[i], "--prompt-only"))
-            prompt = argv[++i], nostdin = true;
-        else if (!strcmp (argv[i], "-fn") || !strcmp (argv[i], "--font-name"))
+        else if (!strcmp (argv[i], "-fn"))
             font = argv[++i];
-        else if (!strcmp (argv[i], "-nb")
-                 || !strcmp (argv[i], "--normal-background"))
+        else if (!strcmp (argv[i], "-nb"))
             color_bg = color_input_bg = parse_color (argv[++i]);
-        else if (!strcmp (argv[i], "-nf")
-                 || !strcmp (argv[i], "--normal-foreground"))
+        else if (!strcmp (argv[i], "-nf"))
             color_fg = color_input_fg = parse_color (argv[++i]);
-        else if (!strcmp (argv[i], "-sb")
-                 || !strcmp (argv[i], "--selected-background"))
+        else if (!strcmp (argv[i], "-sb"))
             color_prompt_bg = color_selected_bg = parse_color (argv[++i]);
-        else if (!strcmp (argv[i], "-sf")
-                 || !strcmp (argv[i], "--selected-foreground"))
+        else if (!strcmp (argv[i], "-sf"))
             color_prompt_fg = color_selected_fg = parse_color (argv[++i]);
-        else if (!strcmp (argv[i], "-bc")
-                 || !strcmp (argv[i], "--border-color"))
+        else if (!strcmp (argv[i], "-bc"))
             color_border = parse_color (argv[++i]);
         else {
             usage ();
         }
     }
 
-    if (message) {
-        signal (SIGALRM, alarmhandler);
-        alarm (timeout);
-    }
-    if (!nostdin) {
-        readstdin ();
-    }
+    readstdin ();
 
     int32_t menu_width, menu_height;
     measure_layout (&menu_width, &menu_height);
@@ -678,17 +617,13 @@ main (int argc, char **argv)
     struct dmenu_panel dmenu = { 0 };
     dmenu.selected_monitor = selected_monitor;
     dmenu.selected_monitor_name = selected_monitor_name;
-    dmenu_init_panel (&dmenu, menu_width, menu_height, panel_position,
-                      !message);
+    dmenu_init_panel (&dmenu, menu_width, menu_height, panel_position, true);
 
     dmenu.on_keyevent = keypress;
     dmenu.on_keyrepeat = keyrepeat;
     dmenu.draw = draw;
-    active_panel = &dmenu;
     match ();
-
-    if (!done)
-        dmenu_show (&dmenu);
+    dmenu_show (&dmenu);
 
     return retcode;
 }
@@ -801,18 +736,12 @@ match (void)
         } else
             matches = lsubstr;
     }
-    curr = prev = next = sel = matches;
+    curr = sel = matches;
     page_start = matches;
     calcoffsets ();
 
     leftmost = matches;
 
-    if (returnearly && curr && !curr->right && active_panel) {
-        puts (curr->text);
-        fflush (stdout);
-        done = true;
-        dmenu_close (active_panel);
-    }
 }
 
 size_t
@@ -859,71 +788,9 @@ readstdin (void)
 }
 
 void
-alarmhandler (int signum)
-{
-    (void)signum;
-    exit (EXIT_SUCCESS);
-}
-
-void
 usage (void)
 {
-    printf ("Usage: dmenu [OPTION]...\n");
-    printf ("Display newline-separated input stdin as a menu\n");
-    printf ("\n");
-    printf (
-        "  -e,  --echo                       display text from stdin with no "
-        "user\n");
-    printf ("                                      interaction\n");
-    printf ("  -ec, --echo-centre                same as -e but align text "
-            "centrally\n");
-    printf ("  -er, --echo-right                 same as -e but align text "
-            "right\n");
-    printf ("  -et, --echo-timeout SECS          close the message after SEC "
-            "seconds\n");
-    printf (
-        "                                      when using -e, -ec, or -er\n");
-    printf (
-        "  -b,  --bottom                     dmenu appears at the bottom of "
-        "the screen\n");
-    printf ("  -t,  --top                        dmenu appears as a top bar\n");
-    printf ("  -c,  --center                     dmenu appears centered\n");
-    printf (
-        "  -h,  --height N                   set dmenu to be N pixels high\n");
-    printf ("  -i,  --insensitive                dmenu matches menu items case "
-            "insensitively\n");
-    printf ("  -l,  --lines LINES                dmenu lists items vertically, "
-            "within the\n");
-    printf ("                                      given number of lines\n");
-    printf ("  -mw, --min-width N                minimum floating width in "
-            "pixels\n");
-    printf ("  -bw, --border-width N             border width in logical "
-            "pixels\n");
-    printf ("  -bc, --border-color COLOR         border color (#RRGGBB or "
-            "#RRGGBBAA)\n");
-    printf (
-        "  -m,  --monitor MONITOR            output index or name on which to "
-        "appear\n");
-    printf ("  -p,  --prompt  PROMPT             prompt to be displayed to the "
-            "left of the\n");
-    printf ("                                      input field\n");
-    printf ("  -po, --prompt-only  PROMPT        same as -p but don't wait for "
-            "stdin\n");
-    printf ("                                      useful for a prompt with no "
-            "menu\n");
-    printf (
-        "  -r,  --return-early               return as soon as a single match "
-        "is found\n");
-    printf (
-        "  -fn, --font-name FONT             font or font set to be used\n");
-    printf ("  -nb, --normal-background COLOR    normal background color\n");
-    printf ("                                      #RRGGBB and #RRGGBBAA "
-            "supported\n");
-    printf ("  -nf, --normal-foreground COLOR    normal foreground color\n");
-    printf ("  -sb, --selected-background COLOR  selected background color\n");
-    printf ("  -sf, --selected-foreground COLOR  selected foreground color\n");
-    printf (
-        "  -v,  --version                    display version information\n");
-
-    exit (EXIT_FAILURE);
+    eprintf ("usage: dmenu-wl [-bctiv] [-h height] [-l lines] [-m monitor] "
+             "[-mw width] [-bw width] [-bc color] [-p prompt] [-fn font] "
+             "[-nb color] [-nf color] [-sb color] [-sf color]\n");
 }

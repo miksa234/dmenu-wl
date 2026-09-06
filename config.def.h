@@ -19,5 +19,3 @@ static enum dmenu_position position = DMENU_POSITION_TOP;
 static char *font = "monospace:size=10";
 
 static int lines = 0;
-
-static int timeout = 3;
