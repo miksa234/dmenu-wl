@@ -28,6 +28,24 @@ distributed separately by wlr-protocols.
 
 
 ## Installation
+ ```
+
+## Nix
+
+Add `dmenu-wl` as a flake input and install it with Home Manager:
+
+```nix
+inputs.dmenu-wl.url = "github:miksa234/dmenu-wl";
+
+home.packages = [
+  inputs.dmenu-wl.packages.${pkgs.system}.default
+];
+```
+
+Or install the package directly:
+
+```sh
+nix profile install github:miksa234/dmenu-wl
 ```
     make
     sudo make install
@@ -40,7 +58,7 @@ distributed separately by wlr-protocols.
 Add to sway configuration (`~/.config/sway/config`) to run the launcher on Win+D.
 
     bindsym $mod+d exec dmenu-wl_run -i
-    
+
 ### ... from the command-line
 
 See the man page for details.
