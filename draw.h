@@ -112,7 +112,7 @@ void keypress (struct dmenu_panel *, enum wl_keyboard_key_state, xkb_keysym_t,
 void pango_printf (cairo_t *cairo, const char *font, double scale,
                    const char *text);
 void get_text_size (cairo_t *cairo, const char *font, int *width, int *height,
-                     double scale, const char *text);
+                    double scale, const char *text);
 void eprintf (const char *fmt, ...);
 void weprintf (const char *fmt, ...);
 extern const char *progname;

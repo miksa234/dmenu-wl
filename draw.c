@@ -66,7 +66,7 @@ get_pango_layout (cairo_t *cairo, const char *font, const char *text,
 
 void
 get_text_size (cairo_t *cairo, const char *font, int *width, int *height,
-                double scale, const char *text)
+               double scale, const char *text)
 {
     PangoLayout *layout = get_pango_layout (cairo, font, text, scale);
     pango_cairo_update_layout (cairo, layout);
@@ -636,7 +636,7 @@ static const struct wl_registry_listener registry_listener = {
 
 void
 dmenu_init_panel (struct dmenu_panel *panel, int32_t width, int32_t height,
-                   enum dmenu_position position)
+                  enum dmenu_position position)
 {
     if (!setlocale (LC_CTYPE, ""))
         weprintf ("no locale support\n");

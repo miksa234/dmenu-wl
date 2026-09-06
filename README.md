@@ -32,6 +32,18 @@ bindsym $mod+d exec dmenu-wl_run -i
 
 ## Nix
 
+Add as flake input and install it with home-manager:
+
+```nix
+inputs.dmenu-wl.url = "github:miksa234/dmenu-wl";
+
+home.packages = [
+  inputs.dmenu-wl.packages.${stdenv.hostPlatform.system}.default
+];
+```
+
+Or install the package directly:
+
 ```sh
 nix shell github:miksa234/dmenu-wl
 ```

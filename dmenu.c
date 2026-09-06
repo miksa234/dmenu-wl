@@ -1,6 +1,6 @@
 /* See LICENSE file for copyright and license details. */
 #include "draw.h"
-#include <ctype.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -371,9 +371,7 @@ draw_content (cairo_t *cairo, int32_t width, double scale)
                 leftmost = leftmost->right;
             }
             while (leftmost->left
-                   && used
-                              + (leftmost->left->width + 2 * item_padding)
-                                    * scale
+                   && used + (leftmost->left->width + 2 * item_padding) * scale
                           <= available) {
                 leftmost = leftmost->left;
                 used += (leftmost->width + 2 * item_padding) * scale;
@@ -430,6 +428,8 @@ draw_menu (cairo_t *cairo, int32_t width, int32_t height, double scale)
 uint32_t
 parse_color (char *str)
 {
+    char *end;
+
     if (!str)
         eprintf ("NULL as color value\n");
 
@@ -438,13 +438,16 @@ parse_color (char *str)
     if ((len != 7 && len != 9) || str[0] != '#')
         eprintf ("Color format must be '#rrggbb[aa]'\n");
 
-    uint32_t _val = strtol (&str[1], NULL, 16);
+    errno = 0;
+    unsigned long value = strtoul (&str[1], &end, 16);
+    if (errno || *end || value > UINT32_MAX)
+        eprintf ("Color format must be '#rrggbb[aa]'\n");
 
     uint32_t color = 0x000000ff;
     if (len == 9) /* Alpha specified */
-        color = _val;
+        color = value;
     else /* No alpha specified, assume full opacity */
-        color = (_val << 8) + 0xff;
+        color = (value << 8) + 0xff;
 
     return color;
 }
@@ -526,15 +529,13 @@ main (int argc, char **argv)
             border_width = parse_nonnegative ("-bw", argv[++i]);
         else if (!strcmp (argv[i], "-m")) {
             ++i;
-            bool is_num = true;
-            for (size_t j = 0; j < strlen (argv[i]); ++j) {
-                if (!isdigit (argv[i][j])) {
-                    is_num = false;
-                    break;
-                }
-            }
-            if (is_num) {
-                selected_monitor = atoi (argv[i]);
+            char *end;
+            errno = 0;
+            long monitor = strtol (argv[i], &end, 10);
+            if (argv[i][0] && !*end) {
+                if (errno || monitor < 0 || monitor > INT32_MAX)
+                    eprintf ("invalid value for -m: %s\n", argv[i]);
+                selected_monitor = monitor;
             } else {
                 selected_monitor = -1;
                 selected_monitor_name = argv[i];
@@ -683,7 +684,6 @@ match (void)
     calcoffsets ();
 
     leftmost = matches;
-
 }
 
 size_t
@@ -708,25 +708,24 @@ nextrune (int incr)
 void
 readstdin (void)
 {
-    char buf[sizeof text], *p;
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t len;
     Item *item, **end;
 
-    for (end = &items; fgets (buf, sizeof buf, stdin);
-         *end = item, end = &item->next) {
+    for (end = &items; (len = getline (&line, &capacity, stdin)) >= 0;
+         *end = item, end = &item->next, line = NULL, capacity = 0) {
         itemcount++;
-
-        if ((p = strchr (buf, '\n'))) {
-            *p = '\0';
-        }
+        if (len && line[len - 1] == '\n')
+            line[len - 1] = '\0';
         if (!(item = malloc (sizeof *item))) {
             eprintf ("cannot malloc %u bytes\n", sizeof *item);
         }
         item->width = -1;
-        if (!(item->text = strdup (buf))) {
-            eprintf ("cannot strdup %u bytes\n", strlen (buf) + 1);
-        }
+        item->text = line;
         item->next = item->left = item->right = NULL;
     }
+    free (line);
 }
 
 void
