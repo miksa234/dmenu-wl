@@ -63,10 +63,7 @@ ${BUILDDIR}/dmenu-wl_path: ${BUILDDIR}/dmenu_path.o
 
 
 clean:
-	rm -rf ${BUILDDIR} dmenu-wl dmenu-wl_path dmenu-wl-${VERSION}.tar.gz \
-		config.h *.o \
-		wlr-layer-shell-unstable-v1-protocol.c \
-		wlr-layer-shell-unstable-v1-client-protocol.h
+	rm -rf ${BUILDDIR} dmenu-wl-${VERSION}.tar.gz
 
 dist: clean
 	mkdir -p dmenu-wl-${VERSION}

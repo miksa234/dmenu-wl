@@ -28,17 +28,6 @@ struct Item {
 
 typedef enum { LEFT, RIGHT, CENTRE } TextPosition;
 
-struct {
-    int32_t width;
-    int32_t height;
-    int32_t text_height;
-    int32_t text_y;
-    int32_t input_field;
-    int32_t scroll_left;
-    int32_t matches;
-    int32_t scroll_right;
-} window_config;
-
 const char *progname;
 
 static void appenditem (Item *item, Item **list, Item **last);
@@ -93,7 +82,8 @@ void
 keyrepeat (struct dmenu_panel *panel)
 {
     if (panel->on_keyevent) {
-        panel->on_keyevent (panel, panel->repeat_key_state, panel->repeat_sym,
+        panel->on_keyevent (panel, WL_KEYBOARD_KEY_STATE_PRESSED,
+                            panel->repeat_sym,
                             panel->keyboard.control, panel->keyboard.shift);
     }
 }
@@ -355,8 +345,6 @@ draw_content (cairo_t *cairo, int32_t width, double scale)
         x = draw_text (cairo, width, row_height, prompt, 0, scale,
                        color_prompt_fg, color_prompt_bg, 6);
     }
-    window_config.input_field = x;
-
     int32_t input_end = lines ? width : MIN (width, x + width / 3);
     cairo_set_source_u32 (cairo, color_input_bg);
     cairo_rectangle (cairo, x, 0, input_end - x, row_height);

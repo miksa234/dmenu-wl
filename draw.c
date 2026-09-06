@@ -34,12 +34,6 @@ scaled_size (int32_t logical, uint32_t scale)
     return ((int64_t)logical * scale + 119) / 120;
 }
 
-int32_t
-round_to_int (double val)
-{
-    return (int32_t)(val + 0.5);
-}
-
 int
 create_shm_file (off_t size)
 {
@@ -224,13 +218,10 @@ layer_surface_closed (void *_data, struct zwlr_layer_surface_v1 *surface)
     panel->running = false;
 }
 
-struct zwlr_layer_surface_v1_listener layer_surface_listener = {
+static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
     .configure = layer_surface_configure,
     .closed = layer_surface_closed,
 };
-
-int32_t subpixel;
-int32_t physical_height;
 
 static void
 output_geometry (void *data, struct wl_output *wl_output, int32_t x, int32_t y,
@@ -245,8 +236,8 @@ output_geometry (void *data, struct wl_output *wl_output, int32_t x, int32_t y,
     (void)make;
     (void)model;
     (void)transform;
-    struct monitor_info *monitor = data;
-    monitor->subpixel = subpixel;
+    (void)data;
+    (void)subpixel;
 }
 
 static void
@@ -255,11 +246,10 @@ output_mode (void *data, struct wl_output *wl_output, uint32_t flags,
 {
     (void)wl_output;
     (void)refresh;
-    struct monitor_info *monitor = data;
-    if (flags & WL_OUTPUT_MODE_CURRENT) {
-        monitor->physical_width = width;
-        monitor->physical_height = height;
-    }
+    (void)data;
+    (void)flags;
+    (void)width;
+    (void)height;
 }
 
 static void
@@ -273,8 +263,8 @@ static void
 output_scale (void *data, struct wl_output *wl_output, int32_t factor)
 {
     (void)wl_output;
-    struct monitor_info *monitor = data;
-    monitor->scale = factor;
+    (void)data;
+    (void)factor;
 }
 
 static void
@@ -294,7 +284,7 @@ output_description (void *data, struct wl_output *wl_output,
     (void)description;
 }
 
-struct wl_output_listener output_listener = {
+static const struct wl_output_listener output_listener = {
     .geometry = output_geometry,
     .mode = output_mode,
     .done = output_done,
@@ -428,7 +418,6 @@ keyboard_key (void *data, struct wl_keyboard *wl_keyboard, uint32_t serial,
         if (key_state == WL_KEYBOARD_KEY_STATE_PRESSED
             && panel->repeat_period_ns > 0
             && xkb_keymap_key_repeats (panel->keyboard.xkb_keymap, key + 8)) {
-            panel->repeat_key_state = key_state;
             panel->repeat_sym = sym;
             panel->repeat_key = key;
 
@@ -506,7 +495,7 @@ seat_handle_name (void *data, struct wl_seat *wl_seat, const char *name)
     (void)name;
 }
 
-const struct wl_seat_listener seat_listener = {
+static const struct wl_seat_listener seat_listener = {
     .capabilities = seat_handle_capabilities,
     .name = seat_handle_name,
 };
@@ -541,8 +530,6 @@ handle_global (void *data, struct wl_registry *registry, uint32_t name,
         if (!monitor)
             eprintf ("cannot allocate output state\n");
         monitor->registry_name = name;
-        monitor->panel = panel;
-        monitor->scale = 1;
         monitor->output
             = wl_registry_bind (registry, name, &wl_output_interface, 4);
         struct monitor_info **link = &panel->display_info.monitors;
@@ -687,8 +674,6 @@ dmenu_create_buffer (struct dmenu_panel *panel, struct draw_buffer *draw_buffer)
     cairo_font_options_set_antialias (fo, CAIRO_ANTIALIAS_GRAY);
     cairo_set_font_options (draw_buffer->cairo, fo);
     cairo_font_options_destroy (fo);
-    cairo_save (draw_buffer->cairo);
-
     return true;
 }
 
@@ -890,8 +875,6 @@ dmenu_show (struct dmenu_panel *dmenu)
         free (monitor);
         monitor = next;
     }
-    if (dmenu->keyboard.kbd)
-        dmenu->keyboard.kbd = NULL;
     if (dmenu->display_info.seat)
         wl_seat_release (dmenu->display_info.seat);
     if (dmenu->display_info.fractional_scale_manager)

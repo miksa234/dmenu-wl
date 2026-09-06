@@ -37,18 +37,8 @@ struct draw_buffer {
 
 struct monitor_info {
     uint32_t registry_name;
-    int32_t physical_width;
-    int32_t physical_height;
-    int32_t logical_width;
-    int32_t logical_height;
-    int32_t scale;
-
     char name[MAX_MONITOR_NAME_LEN];
-
-    enum wl_output_subpixel subpixel;
-
     struct wl_output *output;
-    struct dmenu_panel *panel;
     struct monitor_info *next;
 };
 
@@ -111,7 +101,6 @@ struct dmenu_panel {
     int repeat_timer;
     int repeat_delay;
     int64_t repeat_period_ns;
-    enum wl_keyboard_key_state repeat_key_state;
     xkb_keysym_t repeat_sym;
     uint32_t repeat_key;
 
@@ -131,6 +120,4 @@ void get_text_size (cairo_t *cairo, const char *font, int *width, int *height,
                     ...);
 void eprintf (const char *fmt, ...);
 void weprintf (const char *fmt, ...);
-int32_t round_to_int (double val);
-
 extern const char *progname;
