@@ -83,16 +83,9 @@ struct dmenu_panel {
 
     struct surface surface;
 
-    void (*on_keyevent) (struct dmenu_panel *, enum wl_keyboard_key_state,
-                         xkb_keysym_t, bool, bool);
-    void (*on_keyrepeat) (struct dmenu_panel *);
-
-    void (*draw) (cairo_t *, int32_t, int32_t, double);
-
     int32_t width;
     int32_t height;
     enum dmenu_position position;
-    bool interactive;
     bool configured;
     bool closed;
     bool redraw_pending;
@@ -108,16 +101,18 @@ struct dmenu_panel {
 };
 
 void dmenu_init_panel (struct dmenu_panel *, int32_t, int32_t,
-                       enum dmenu_position, bool);
+                       enum dmenu_position);
 void dmenu_draw (struct dmenu_panel *);
 void dmenu_show (struct dmenu_panel *);
 void dmenu_close (struct dmenu_panel *);
 
-void pango_printf (cairo_t *cairo, const char *font, double scale, bool markup,
-                   const char *fmt, ...);
+void draw_menu (cairo_t *, int32_t, int32_t, double);
+void keypress (struct dmenu_panel *, enum wl_keyboard_key_state, xkb_keysym_t,
+               bool, bool);
+void pango_printf (cairo_t *cairo, const char *font, double scale,
+                   const char *text);
 void get_text_size (cairo_t *cairo, const char *font, int *width, int *height,
-                    int *baseline, double scale, bool markup, const char *fmt,
-                    ...);
+                     double scale, const char *text);
 void eprintf (const char *fmt, ...);
 void weprintf (const char *fmt, ...);
 extern const char *progname;

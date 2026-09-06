@@ -21,9 +21,6 @@
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 
-static const char overflow[] = "[buffer overflow]";
-static const int max_chars = 16384;
-
 static bool dmenu_create_buffer (struct dmenu_panel *panel,
                                  struct draw_buffer *buffer);
 static void dmenu_destroy_buffer (struct draw_buffer *buffer);
@@ -52,29 +49,11 @@ create_shm_file (off_t size)
 
 PangoLayout *
 get_pango_layout (cairo_t *cairo, const char *font, const char *text,
-                  double scale, bool markup)
+                  double scale)
 {
     PangoLayout *layout = pango_cairo_create_layout (cairo);
-    PangoAttrList *attrs;
-    if (markup) {
-        char *buf;
-        GError *error = NULL;
-        if (pango_parse_markup (text, -1, 0, &attrs, &buf, NULL, &error)) {
-            pango_layout_set_text (layout, buf, -1);
-            free (buf);
-        } else {
-            /* wlr_log(WLR_ERROR, "pango_parse_markup '%s' -> error
-             * %s", text, */
-            /* 		error->message); */
-            g_error_free (error);
-            markup = false; // fallback to plain text
-        }
-    }
-    if (!markup) {
-        attrs = pango_attr_list_new ();
-        pango_layout_set_text (layout, text, -1);
-    }
-
+    PangoAttrList *attrs = pango_attr_list_new ();
+    pango_layout_set_text (layout, text, -1);
     pango_attr_list_insert (attrs, pango_attr_scale_new (scale));
     PangoFontDescription *desc = pango_font_description_from_string (font);
     pango_layout_set_font_description (layout, desc);
@@ -87,40 +66,18 @@ get_pango_layout (cairo_t *cairo, const char *font, const char *text,
 
 void
 get_text_size (cairo_t *cairo, const char *font, int *width, int *height,
-               int *baseline, double scale, bool markup, const char *fmt, ...)
+                double scale, const char *text)
 {
-    char buf[max_chars];
-
-    va_list args;
-    va_start (args, fmt);
-    if (vsnprintf (buf, sizeof (buf), fmt, args) >= max_chars) {
-        strcpy (&buf[sizeof (buf) - sizeof (overflow)], overflow);
-    }
-    va_end (args);
-
-    PangoLayout *layout = get_pango_layout (cairo, font, buf, scale, markup);
+    PangoLayout *layout = get_pango_layout (cairo, font, text, scale);
     pango_cairo_update_layout (cairo, layout);
     pango_layout_get_pixel_size (layout, width, height);
-    if (baseline) {
-        *baseline = pango_layout_get_baseline (layout) / PANGO_SCALE;
-    }
     g_object_unref (layout);
 }
 
 void
-pango_printf (cairo_t *cairo, const char *font, double scale, bool markup,
-              const char *fmt, ...)
+pango_printf (cairo_t *cairo, const char *font, double scale, const char *text)
 {
-    char buf[max_chars];
-
-    va_list args;
-    va_start (args, fmt);
-    if (vsnprintf (buf, sizeof (buf), fmt, args) >= max_chars) {
-        strcpy (&buf[sizeof (buf) - sizeof (overflow)], overflow);
-    }
-    va_end (args);
-
-    PangoLayout *layout = get_pango_layout (cairo, font, buf, scale, markup);
+    PangoLayout *layout = get_pango_layout (cairo, font, text, scale);
     cairo_font_options_t *fo = cairo_font_options_create ();
     cairo_get_font_options (cairo, fo);
     pango_cairo_context_set_font_options (pango_layout_get_context (layout),
@@ -162,9 +119,7 @@ dmenu_draw (struct dmenu_panel *panel)
     int32_t height = pixel_height;
     double scale = panel->preferred_scale / 120.0;
 
-    if (panel->draw) {
-        panel->draw (cairo, width, height, scale);
-    }
+    draw_menu (cairo, width, height, scale);
     wl_surface_attach (panel->surface.surface, buffer->buffer, 0, 0);
     buffer->busy = true;
     wl_surface_damage_buffer (panel->surface.surface, 0, 0, width, height);
@@ -387,9 +342,8 @@ keyboard_leave (void *data, struct wl_keyboard *wl_keyboard, uint32_t serial,
 static void
 keyboard_repeat (struct dmenu_panel *panel)
 {
-    if (panel->on_keyrepeat) {
-        panel->on_keyrepeat (panel);
-    }
+    keypress (panel, WL_KEYBOARD_KEY_STATE_PRESSED, panel->repeat_sym,
+              panel->keyboard.control, panel->keyboard.shift);
 
     struct itimerspec spec = { 0 };
     spec.it_value.tv_sec = panel->repeat_period_ns / 1000000000;
@@ -411,24 +365,22 @@ keyboard_key (void *data, struct wl_keyboard *wl_keyboard, uint32_t serial,
     enum wl_keyboard_key_state key_state = _key_state;
     xkb_keysym_t sym
         = xkb_state_key_get_one_sym (panel->keyboard.xkb_state, key + 8);
-    if (panel->on_keyevent) {
-        panel->on_keyevent (panel, key_state, sym, panel->keyboard.control,
-                            panel->keyboard.shift);
+    keypress (panel, key_state, sym, panel->keyboard.control,
+              panel->keyboard.shift);
 
-        if (key_state == WL_KEYBOARD_KEY_STATE_PRESSED
-            && panel->repeat_period_ns > 0
-            && xkb_keymap_key_repeats (panel->keyboard.xkb_keymap, key + 8)) {
-            panel->repeat_sym = sym;
-            panel->repeat_key = key;
+    if (key_state == WL_KEYBOARD_KEY_STATE_PRESSED
+        && panel->repeat_period_ns > 0
+        && xkb_keymap_key_repeats (panel->keyboard.xkb_keymap, key + 8)) {
+        panel->repeat_sym = sym;
+        panel->repeat_key = key;
 
-            struct itimerspec spec = { 0 };
-            spec.it_value.tv_sec = panel->repeat_delay / 1000;
-            spec.it_value.tv_nsec = (panel->repeat_delay % 1000) * 1000000l;
-            timerfd_settime (panel->repeat_timer, 0, &spec, NULL);
-        } else if (key_state == WL_KEYBOARD_KEY_STATE_RELEASED
-                   && key == panel->repeat_key) {
-            cancel_key_repeat (panel);
-        }
+        struct itimerspec spec = { 0 };
+        spec.it_value.tv_sec = panel->repeat_delay / 1000;
+        spec.it_value.tv_nsec = (panel->repeat_delay % 1000) * 1000000l;
+        timerfd_settime (panel->repeat_timer, 0, &spec, NULL);
+    } else if (key_state == WL_KEYBOARD_KEY_STATE_RELEASED
+               && key == panel->repeat_key) {
+        cancel_key_repeat (panel);
     }
 }
 
@@ -684,7 +636,7 @@ static const struct wl_registry_listener registry_listener = {
 
 void
 dmenu_init_panel (struct dmenu_panel *panel, int32_t width, int32_t height,
-                  enum dmenu_position position, bool interactive)
+                   enum dmenu_position position)
 {
     if (!setlocale (LC_CTYPE, ""))
         weprintf ("no locale support\n");
@@ -698,14 +650,12 @@ dmenu_init_panel (struct dmenu_panel *panel, int32_t width, int32_t height,
     panel->width = width;
     panel->height = height;
     panel->position = position;
-    panel->interactive = interactive;
     panel->configured = false;
     panel->closed = false;
     panel->redraw_pending = false;
     panel->preferred_scale = 120;
     panel->repeat_period_ns = 0;
     panel->keyboard.control = false;
-    panel->on_keyevent = NULL;
 
     panel->display_info.registry
         = wl_display_get_registry (panel->display_info.display);
@@ -721,7 +671,7 @@ dmenu_init_panel (struct dmenu_panel *panel, int32_t width, int32_t height,
         || !panel->display_info.fractional_scale_manager
         || !panel->display_info.viewporter)
         eprintf ("compositor lacks a required modern Wayland protocol\n");
-    if (interactive && !panel->display_info.seat)
+    if (!panel->display_info.seat)
         eprintf ("compositor did not advertise a keyboard seat\n");
 
     panel->monitor = NULL;
@@ -773,8 +723,7 @@ dmenu_init_panel (struct dmenu_panel *panel, int32_t width, int32_t height,
                                         &layer_surface_listener, panel);
     zwlr_layer_surface_v1_set_keyboard_interactivity (
         panel->surface.layer_surface,
-        interactive ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
-                    : ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+        ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE);
 
     wl_surface_commit (panel->surface.surface);
     while (!panel->configured && !panel->closed

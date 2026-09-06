@@ -46,7 +46,6 @@ static const char *prompt = NULL;
 static enum dmenu_position panel_position;
 static Item *items = NULL;
 static Item *matches, *sel;
-static Item *curr;
 static Item *leftmost, *rightmost;
 static Item *page_start;
 
@@ -64,16 +63,6 @@ insert (const char *s, ssize_t n)
         memcpy (text + cursor, s, n);
     cursor += n;
     match ();
-}
-
-void
-keyrepeat (struct dmenu_panel *panel)
-{
-    if (panel->on_keyevent) {
-        panel->on_keyevent (panel, WL_KEYBOARD_KEY_STATE_PRESSED,
-                            panel->repeat_sym,
-                            panel->keyboard.control, panel->keyboard.shift);
-    }
 }
 
 void
@@ -205,7 +194,7 @@ keypress (struct dmenu_panel *panel, enum wl_keyboard_key_state state,
                 cursor = 0;
                 break;
             }
-            sel = curr = matches;
+            sel = matches;
             leftmost = matches;
             /* calcoffsets(); */
             break;
@@ -257,8 +246,7 @@ draw_text (cairo_t *cairo, int32_t width, int32_t height, const char *str,
 {
 
     int32_t text_width, text_height;
-    get_text_size (cairo, font, &text_width, &text_height, NULL, scale, false,
-                   "%s", str);
+    get_text_size (cairo, font, &text_width, &text_height, scale, str);
     int32_t text_y = (height / 2.0) - (text_height / 2.0);
 
     if (x + padding * scale + text_width + 30 * scale > width) {
@@ -271,7 +259,7 @@ draw_text (cairo_t *cairo, int32_t width, int32_t height, const char *str,
         }
         cairo_move_to (cairo, x + padding * scale, text_y);
         cairo_set_source_u32 (cairo, foreground_color);
-        pango_printf (cairo, font, scale, false, "%s", str);
+        pango_printf (cairo, font, scale, str);
         cairo_restore (cairo);
         return width;
     } else {
@@ -285,7 +273,7 @@ draw_text (cairo_t *cairo, int32_t width, int32_t height, const char *str,
         cairo_move_to (cairo, x + padding * scale, text_y);
         cairo_set_source_u32 (cairo, foreground_color);
 
-        pango_printf (cairo, font, scale, false, "%s", str);
+        pango_printf (cairo, font, scale, str);
     }
 
     return x + text_width + 2 * padding * scale;
@@ -299,8 +287,7 @@ draw_content (cairo_t *cairo, int32_t width, double scale)
     int32_t item_padding = 10;
 
     int32_t text_width, text_height;
-    get_text_size (cairo, font, &text_width, &text_height, NULL, scale, false,
-                   "Aj");
+    get_text_size (cairo, font, &text_width, &text_height, scale, "Aj");
     int32_t text_y = (row_height - text_height) / 2;
 
     cairo_set_source_u32 (cairo, color_bg);
@@ -325,8 +312,7 @@ draw_content (cairo_t *cairo, int32_t width, double scale)
         memset (text_, 0, BUFSIZ);
         strncpy (text_, text, cursor);
         int32_t text_width, text_height;
-        get_text_size (cairo, font, &text_width, &text_height, NULL, scale,
-                       false, "%s", text_);
+        get_text_size (cairo, font, &text_width, &text_height, scale, text_);
         /* int32_t text_y = (height / 2.0) - (text_height / 2.0); */
         int32_t padding = 6 * scale;
         cairo_rectangle (cairo, x + padding + text_width, text_y, scale,
@@ -350,7 +336,7 @@ draw_content (cairo_t *cairo, int32_t width, double scale)
             cairo_move_to (cairo, item_padding * scale,
                            y + (row_height - text_height) / 2);
             cairo_set_source_u32 (cairo, fg);
-            pango_printf (cairo, font, scale, false, "%s", item->text);
+            pango_printf (cairo, font, scale, item->text);
             cairo_restore (cairo);
         }
         return;
@@ -367,65 +353,30 @@ draw_content (cairo_t *cairo, int32_t width, double scale)
         rightmost = NULL;
         int32_t content_width = width - 20 * scale;
         if (sel) {
-            Item *candidate = leftmost;
-            int32_t candidate_x = x;
-            bool selected_visible = false;
+            int32_t available = MAX (0, content_width - x);
+            int32_t used = 0;
 
-            for (item = candidate; item; item = item->right) {
-                int32_t item_width;
-                get_text_size (cairo, font, &item_width, NULL, NULL, scale,
-                               false, "%s", item->text);
-                if (item == sel) {
-                    selected_visible
-                        = candidate_x + item_width + 2 * item_padding * scale
-                          <= content_width;
-                    break;
-                }
-                candidate_x += item_width + 2 * item_padding * scale;
-                if (candidate_x >= content_width)
+            for (item = leftmost; item && item != sel; item = item->right)
+                ;
+            if (!item)
+                leftmost = sel;
+
+            for (item = leftmost; item; item = item->right) {
+                used += (item->width + 2 * item_padding) * scale;
+                if (item == sel)
                     break;
             }
-
-            if (!selected_visible) {
-                bool selected_before = false;
-                for (item = sel; item; item = item->right)
-                    if (item == candidate) {
-                        selected_before = true;
-                        break;
-                    }
-                if (selected_before) {
-                    candidate = sel;
-                    while (candidate->left) {
-                        int32_t end_x = x;
-                        for (item = candidate->left; item; item = item->right) {
-                            int32_t item_width;
-                            get_text_size (cairo, font, &item_width, NULL, NULL,
-                                           scale, false, "%s", item->text);
-                            end_x += item_width + 2 * item_padding * scale;
-                            if (item == sel)
-                                break;
-                        }
-                        if (end_x > content_width)
-                            break;
-                        candidate = candidate->left;
-                    }
-                } else {
-                    while (candidate != sel) {
-                        candidate = candidate->right;
-                        int32_t end_x = x;
-                        for (item = candidate; item; item = item->right) {
-                            int32_t item_width;
-                            get_text_size (cairo, font, &item_width, NULL, NULL,
-                                           scale, false, "%s", item->text);
-                            end_x += item_width + 2 * item_padding * scale;
-                            if (item == sel)
-                                break;
-                        }
-                        if (end_x <= content_width)
-                            break;
-                    }
-                }
-                leftmost = candidate;
+            while (leftmost != sel && used > available) {
+                used -= (leftmost->width + 2 * item_padding) * scale;
+                leftmost = leftmost->right;
+            }
+            while (leftmost->left
+                   && used
+                              + (leftmost->left->width + 2 * item_padding)
+                                    * scale
+                          <= available) {
+                leftmost = leftmost->left;
+                used += (leftmost->width + 2 * item_padding) * scale;
             }
         }
 
@@ -444,18 +395,18 @@ draw_content (cairo_t *cairo, int32_t width, double scale)
 
         if (leftmost != matches) {
             cairo_move_to (cairo, scroll_indicator_pos, text_y);
-            pango_printf (cairo, font, scale, false, "<");
+            pango_printf (cairo, font, scale, "<");
         }
         if (rightmost && rightmost->right) {
             cairo_move_to (cairo, width - 12 * scale, text_y);
             cairo_set_source_u32 (cairo, color_fg);
-            pango_printf (cairo, font, scale, false, ">");
+            pango_printf (cairo, font, scale, ">");
         }
     }
 }
 
 void
-draw (cairo_t *cairo, int32_t width, int32_t height, double scale)
+draw_menu (cairo_t *cairo, int32_t width, int32_t height, double scale)
 {
     int32_t max_border = (MIN (width, height) - 1) / 2;
     int64_t scaled_border = (int64_t)border_width * scale;
@@ -516,16 +467,14 @@ measure_layout (int32_t *width, int32_t *height)
     cairo_t *cairo = cairo_create (surface);
     int32_t widest = 0, prompt_width = 0, text_height = 0;
 
-    get_text_size (cairo, font, NULL, &text_height, NULL, 1, false, "Aj");
+    get_text_size (cairo, font, NULL, &text_height, 1, "Aj");
     panel_height = MAX (panel_height, text_height + 2);
     if (prompt) {
-        get_text_size (cairo, font, &prompt_width, NULL, NULL, 1, false, "%s",
-                       prompt);
+        get_text_size (cairo, font, &prompt_width, NULL, 1, prompt);
         prompt_width += 12;
     }
     for (Item *item = items; item; item = item->next) {
-        get_text_size (cairo, font, &item->width, NULL, NULL, 1, false, "%s",
-                       item->text);
+        get_text_size (cairo, font, &item->width, NULL, 1, item->text);
         widest = MAX (widest, item->width + 20);
     }
     int64_t natural_width = (int64_t)prompt_width + widest + 2 * border_width;
@@ -617,11 +566,7 @@ main (int argc, char **argv)
     struct dmenu_panel dmenu = { 0 };
     dmenu.selected_monitor = selected_monitor;
     dmenu.selected_monitor_name = selected_monitor_name;
-    dmenu_init_panel (&dmenu, menu_width, menu_height, panel_position, true);
-
-    dmenu.on_keyevent = keypress;
-    dmenu.on_keyrepeat = keyrepeat;
-    dmenu.draw = draw;
+    dmenu_init_panel (&dmenu, menu_width, menu_height, panel_position);
     match ();
     dmenu_show (&dmenu);
 
@@ -682,13 +627,12 @@ match (void)
     size_t len;
     Item *item, *itemend, *lexact, *lprefix, *lsubstr, *exactend, *prefixend,
         *substrend;
-    char *query = strdup (text);
+    char query[sizeof text];
     char *tokens[BUFSIZ / 2 + 1];
     size_t token_count = 0;
     char *token;
 
-    if (!query)
-        eprintf ("cannot duplicate query\n");
+    memcpy (query, text, sizeof query);
     for (token = strtok (query, " "); token && token_count < BUFSIZ / 2;
          token = strtok (NULL, " "))
         tokens[token_count++] = token;
@@ -715,8 +659,6 @@ match (void)
             appenditem (item, &lsubstr, &substrend);
         }
     }
-    free (query);
-
     if (lexact) {
         matches = lexact;
         itemend = exactend;
@@ -736,7 +678,7 @@ match (void)
         } else
             matches = lsubstr;
     }
-    curr = sel = matches;
+    sel = matches;
     page_start = matches;
     calcoffsets ();
 
