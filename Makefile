@@ -51,7 +51,10 @@ ${BUILDDIR}/wlr-layer-shell-unstable-v1-protocol.c: wlr-layer-shell-unstable-v1.
 ${BUILDDIR}/wlr-layer-shell-unstable-v1-client-protocol.h: wlr-layer-shell-unstable-v1.xml | ${BUILDDIR}
 	${WAYLAND_SCANNER} client-header $< $@
 
-${BUILDDIR}/%.o: %.c ${BUILDDIR}/config.h ${PROTO_H} config.mk draw.h
+${BUILDDIR}/dmenu.o: ${BUILDDIR}/config.h draw.h ${PROTO_H}
+${BUILDDIR}/draw.o: draw.h ${PROTO_H}
+
+${BUILDDIR}/%.o: %.c config.mk | ${BUILDDIR}
 	mkdir -p ${BUILDDIR}
 	${CC} -I${BUILDDIR} ${CPPFLAGS} ${CFLAGS} -c -o $@ $<
 

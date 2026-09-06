@@ -5,7 +5,10 @@ dmenu-wl \- dynamic menu
 .B dmenu-wl
 .RB [ \-b ]
 .RB [ \-t ]
+.RB [ \-c ]
 .RB [ \-i ]
+.RB [ \-h
+.IR height ]
 .RB [ \-l
 .IR lines ]
 .RB [ \-m
@@ -39,14 +42,13 @@ is a dynamic menu for Wayland, originally designed for X and
 .BR dwm (1).
 It manages huge numbers of user-defined menu items efficiently.
 .P
-dmenu-wl reads a list of newline-separated items from standard input and creates a
-menu (or displays a notification if using -e). When the user selects an item or
-enters any text and presses Return, their choice is printed to standard output
-and dmenu-wl terminates.
+dmenu-wl reads a list of newline-separated items from standard input. When the
+user selects an item or enters text and presses Return, the choice is printed to
+standard output and dmenu-wl terminates.
 .P
-By default, the menu floats in the center of the selected output. Its width is
-the greater of the natural content width and the configured minimum width,
-clamped to the output width.
+By default, the menu is a full-width bar at the top of the selected output.
+Centered menus use the greater of the natural content width and the configured
+minimum width, clamped to the output width.
 .P
 .B dmenu-wl_run
 is a dmenu-wl script used by dwm which lists programs in the user's PATH and
@@ -55,23 +57,14 @@ executes the selected item.
 .B dmenu-wl_path
 is a program used by dmenu-wl_run to find and cache a list of executables.
 .SH OPTIONS
-.B \-e
-dmenu displays text from stdin with no user interaction.
-.TP
-.B \-ec
-same as -e but text is aligned centrally.
-.TP
-.B \-er
-same as -e but text is aligned to the right.
-.TP
-.BI \-et " secs "
-when using -e, close the message after the given number of seconds
-.TP
 .B \-b
 dmenu appears as a full-width bar at the bottom of the screen.
 .TP
 .B \-t
 dmenu appears as a full-width bar at the top of the screen.
+.TP
+.B \-c
+dmenu appears centered at its natural width.
 .TP
 .BI \-h " height"
 dmenu is drawn at least the given number of pixels high.
@@ -86,25 +79,18 @@ dmenu lists items vertically, within the given number of lines.
 dmenu appears on the given monitor (0-based index or monitor name)
 .TP
 .BI \-mw " width"
-sets the minimum width of the centered menu in logical pixels. The default is
-600. The menu may grow to fit its prompt and widest item.
+sets the minimum width of the centered menu in logical pixels. The menu may grow
+to fit its prompt and widest item.
 .TP
 .BI \-bw " width"
-sets the border width in logical pixels. The default is 3. A width of 0 disables
-the border. Borders are drawn around centered menus and full-width bars.
+sets the border width in logical pixels. A width of 0 disables the border.
+Borders are drawn around centered menus and full-width bars.
 .TP
 .BI \-bc " color"
-sets the border color. The default is #642b2b. Both #RRGGBB and #RRGGBBAA are
-supported.
+sets the border color. Both #RRGGBB and #RRGGBBAA are supported.
 .TP
 .BI \-p " prompt"
 defines the prompt to be displayed to the left of the input field.
-.TP
-.BI \-po " prompt"
-same as -p but don't wait for stdin - useful for a prompt with no selection options.
-.TP
-.B \-r
-Return as soon as a single match is found. i.e. don't wait for the user to press return.
 .TP
 .BI \-fn " font"
 defines the font or font set used.
