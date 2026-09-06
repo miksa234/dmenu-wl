@@ -8,7 +8,7 @@ static uint32_t color_prompt_bg = 0x222222ff;
 static uint32_t color_prompt_fg = 0xbbbbbbff;
 static uint32_t color_selected_bg = 0x005577ff;
 static uint32_t color_selected_fg = 0xeeeeeeff;
-static uint32_t color_border = 0x00ffffff;
+static uint32_t color_border = 0x005577ff;
 
 static int32_t panel_height = 0;
 static int32_t min_width = 0;

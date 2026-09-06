@@ -1,17 +1,15 @@
 # dmenu-wl - dynamic menu
+
 dmenu-wl is an efficient dynamic menu for wayland (wlroots).
 
-## TODO
-Missing dmenu (for X) features:
-- Choice (-c) -mode
-- Clipboard and primary-selection paste
-
 ## Requirements
+
 Requires a compositor which implements version 4 of wlr-layer-shell, core
 `wl_output` version 4, fractional-scale-v1, and viewporter. Compositors without
 these modern protocols are intentionally unsupported.
 
 Required libraries (and headers):
+
 - wayland-client
 - cairo
 - pango-1.0
@@ -26,9 +24,12 @@ The build uses GNU Make and generates private C bindings from the installed
 Wayland protocol XML files. The layer-shell XML is bundled because it is
 distributed separately by wlr-protocols.
 
-
 ## Installation
- ```
+
+```sh
+make
+sudo make install
+```
 
 ## Nix
 
@@ -45,10 +46,7 @@ home.packages = [
 Or install the package directly:
 
 ```sh
-nix profile install github:miksa234/dmenu-wl
-```
-    make
-    sudo make install
+nix shell github:miksa234/dmenu-wl
 ```
 
 ## Running dmenu-wl ...
@@ -62,6 +60,7 @@ Add to sway configuration (`~/.config/sway/config`) to run the launcher on Win+D
 ### ... from the command-line
 
 See the man page for details.
+
 ```
 Usage: dmenu-wl [OPTION]...
 
@@ -73,6 +72,7 @@ Display newline-separated input stdin as a centered menu
     -er, --echo-right                 same as -e but align text right
     -et, --echo-timeout SECS          close the message after SEC seconds
                                       when using -e, -ec, or -er
+    -c,  --center                     dmenu appears as a centered menu
     -b,  --bottom                     dmenu appears as a full-width bottom bar
     -t,  --top                        dmenu appears as a full-width top bar
     -h,  --height N                   set dmenu to be N pixels high
@@ -81,7 +81,7 @@ Display newline-separated input stdin as a centered menu
                                       given number of lines
     -mw, --min-width N                minimum centered-menu width (default 600)
     -bw, --border-width N             border width in logical pixels (default 3)
-    -bc, --border-color COLOR         border color (default #642b2b)
+    -bc, --border-color COLOR         border color
     -m,  --monitor MONITOR            dmenu appears on the given monitor
                                       (0-based index or monitor name)
     -p,  --prompt  PROMPT             prompt to be displayed to the left of the

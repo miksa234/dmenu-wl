@@ -49,7 +49,6 @@ static void measure_layout(int32_t *, int32_t *);
 static size_t nextrune(int incr);
 static void readstdin(void);
 static void alarmhandler(int signum);
-/* static void handle_return(char* value); */
 static void usage(void);
 static int retcode = EXIT_SUCCESS;
 static int selected_monitor = 0;
@@ -344,8 +343,7 @@ static void draw_content(cairo_t *cairo, int32_t width, double scale) {
   }
   window_config.input_field = x;
 
-  int32_t input_end =
-      lines ? width : MIN(width, MAX(width / 3, x + 300 * scale));
+  int32_t input_end = lines ? width : MIN(width, x + width / 3);
   cairo_set_source_u32(cairo, color_input_bg);
   cairo_rectangle(cairo, x, 0, input_end - x, row_height);
   cairo_fill(cairo);
@@ -424,6 +422,69 @@ static void draw_content(cairo_t *cairo, int32_t width, double scale) {
     /* } */
 
     rightmost = NULL;
+    int32_t content_width = width - 20 * scale;
+    if (sel) {
+      Item *candidate = leftmost;
+      int32_t candidate_x = x;
+      bool selected_visible = false;
+
+      for (item = candidate; item; item = item->right) {
+        int32_t item_width;
+        get_text_size(cairo, font, &item_width, NULL, NULL, scale, false,
+                      "%s", item->text);
+        if (item == sel) {
+          selected_visible = candidate_x + item_width +
+                                 2 * item_padding * scale <= content_width;
+          break;
+        }
+        candidate_x += item_width + 2 * item_padding * scale;
+        if (candidate_x >= content_width)
+          break;
+      }
+
+      if (!selected_visible) {
+        bool selected_before = false;
+        for (item = sel; item; item = item->right)
+          if (item == candidate) {
+            selected_before = true;
+            break;
+          }
+        if (selected_before) {
+          candidate = sel;
+          while (candidate->left) {
+            int32_t end_x = x;
+            for (item = candidate->left; item; item = item->right) {
+              int32_t item_width;
+              get_text_size(cairo, font, &item_width, NULL, NULL, scale,
+                            false, "%s", item->text);
+              end_x += item_width + 2 * item_padding * scale;
+              if (item == sel)
+                break;
+            }
+            if (end_x > content_width)
+              break;
+            candidate = candidate->left;
+          }
+        } else {
+          while (candidate != sel) {
+            candidate = candidate->right;
+            int32_t end_x = x;
+            for (item = candidate; item; item = item->right) {
+              int32_t item_width;
+              get_text_size(cairo, font, &item_width, NULL, NULL, scale,
+                            false, "%s", item->text);
+              end_x += item_width + 2 * item_padding * scale;
+              if (item == sel)
+                break;
+            }
+            if (end_x <= content_width)
+              break;
+          }
+        }
+        leftmost = candidate;
+      }
+    }
+
     for (item = leftmost; item; item = item->right) {
       uint32_t bg_color = sel == item ? color_selected_bg : color_bg;
       uint32_t fg_color = sel == item ? color_selected_fg : color_fg;

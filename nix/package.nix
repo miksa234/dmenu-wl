@@ -1,6 +1,5 @@
 {
   stdenv,
-  gcc,
   gnumake,
   pkg-config,
   wayland-scanner,
@@ -19,7 +18,6 @@ stdenv.mkDerivation {
   src = ../.;
 
   nativeBuildInputs = [
-    gcc
     gnumake
     pkg-config
     wayland-scanner

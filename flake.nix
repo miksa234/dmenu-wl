@@ -17,10 +17,11 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
+          dmenu-wl = pkgs.callPackage ./nix/package.nix { };
         in
         {
-          dmenu-wl = pkgs.callPackage ./nix/package.nix { };
-          default = pkgs.callPackage ./nix/package.nix { };
+          inherit dmenu-wl;
+          default = dmenu-wl;
         }
       );
 
@@ -31,15 +32,14 @@
         in
         {
           default = pkgs.mkShell {
-            # Compiler and build tools
             nativeBuildInputs = with pkgs; [
               gcc
               gnumake
               pkg-config
               wayland-scanner
+              bear
             ];
 
-            # Libraries, protocols, and headers
             buildInputs = with pkgs; [
               cairo
               glib
