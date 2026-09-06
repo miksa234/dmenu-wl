@@ -15,12 +15,13 @@ PKGS = cairo glib-2.0 gobject-2.0 pango pangocairo wayland-client xkbcommon
 
 # includes and libs
 INCS = ${shell ${PKG_CONFIG} --cflags ${PKGS}}
-LIBS = ${shell ${PKG_CONFIG} --libs ${PKGS}} -lrt
+LIBS = ${shell ${PKG_CONFIG} --libs ${PKGS}}
 
 # flags
-CPPFLAGS = -D_DEFAULT_SOURCE -DVERSION=\"${VERSION}\"
-CFLAGS = -std=c99 -pedantic -Wall -Os ${INCS} ${CPPFLAGS}
-LDFLAGS = ${LIBS}
+CPPFLAGS = -D_GNU_SOURCE -DVERSION=\"${VERSION}\"
+CFLAGS = -std=c99 -pedantic -Wall -Wextra -Os ${INCS}
+LDFLAGS =
+LDLIBS = ${LIBS}
 
 # compiler and linker
 CC = cc

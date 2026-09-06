@@ -6,14 +6,10 @@ Missing dmenu (for X) features:
 - Choice (-c) -mode
 - Clipboard and primary-selection paste
 
-Other TODO items:
-- Cleaner exiting
-
 ## Requirements
-Requires a compositor which implements wlr-layer-shell and xdg-output
-protocols. Basically this means a wlroots-based compositor is needed.
-Gnome and KDE are therefore [not supported](https://github.com/nyyManni/dmenu-wayland/issues/16).
-Tested with sway 1.0.
+Requires a compositor which implements version 4 of wlr-layer-shell, core
+`wl_output` version 4, fractional-scale-v1, and viewporter. Compositors without
+these modern protocols are intentionally unsupported.
 
 Required libraries (and headers):
 - wayland-client
@@ -23,6 +19,12 @@ Required libraries (and headers):
 - xkbcommon
 - glib-2.0
 - gobject-2.0
+- wayland-protocols
+- wayland-scanner
+
+The build uses GNU Make and generates private C bindings from the installed
+Wayland protocol XML files. The layer-shell XML is bundled because it is
+distributed separately by wlr-protocols.
 
 
 ## Installation

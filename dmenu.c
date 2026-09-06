@@ -266,7 +266,7 @@ void cairo_set_source_u32(cairo_t *cairo, uint32_t color) {
 }
 
 int32_t draw_text(cairo_t *cairo, int32_t width, int32_t height, const char *str,
-				  int32_t x, int32_t scale, uint32_t
+				  int32_t x, double scale, uint32_t
 				  foreground_color, uint32_t background_color, int32_t padding) {
 
 	int32_t text_width, text_height;
@@ -304,7 +304,7 @@ int32_t draw_text(cairo_t *cairo, int32_t width, int32_t height, const char *str
 }
 
 static void
-draw_content(cairo_t *cairo, int32_t width, int32_t height, int32_t scale) {
+draw_content(cairo_t *cairo, int32_t width, double scale) {
 	int32_t row_height = panel_height * scale;
 	int32_t x = 0;
 	int32_t item_padding = 10;
@@ -452,7 +452,7 @@ draw_content(cairo_t *cairo, int32_t width, int32_t height, int32_t scale) {
 }
 
 void
-draw(cairo_t *cairo, int32_t width, int32_t height, int32_t scale) {
+draw(cairo_t *cairo, int32_t width, int32_t height, double scale) {
 	int32_t max_border = (MIN(width, height) - 1) / 2;
 	int64_t scaled_border = (int64_t)border_width * scale;
 	int32_t border = scaled_border < max_border
@@ -468,7 +468,7 @@ draw(cairo_t *cairo, int32_t width, int32_t height, int32_t scale) {
 			width - 2 * border, height - 2 * border);
 	cairo_clip(cairo);
 	cairo_translate(cairo, border, border);
-	draw_content(cairo, width - 2 * border, height - 2 * border, scale);
+	draw_content(cairo, width - 2 * border, scale);
 	cairo_restore(cairo);
 }
 
@@ -572,7 +572,7 @@ main(int argc, char **argv) {
     else if (!strcmp(argv[i], "-m") || !strcmp(argv[i], "--monitor")) {
 		++i;
 		bool is_num = true;
-		for (int j = 0; j < strlen(argv[i]); ++j) {
+		for (size_t j = 0; j < strlen(argv[i]); ++j) {
 			if (!isdigit(argv[i][j])) {
 				is_num = false;
 				break;
@@ -759,10 +759,19 @@ match(void) {
 
 size_t
 nextrune(int incr) {
-	size_t n, len;
+	size_t n, len = strlen(text);
 
-	len = strlen(text);
-	for(n = cursor + incr; n >= 0 && n < len && (text[n] & 0xc0) == 0x80; n += incr);
+	if (incr < 0) {
+		if (cursor == 0)
+			return 0;
+		n = cursor - 1;
+		while (n > 0 && (text[n] & 0xc0) == 0x80)
+			n--;
+	} else {
+		n = cursor + (size_t)incr;
+		while (n < len && (text[n] & 0xc0) == 0x80)
+			n += (size_t)incr;
+	}
 	return n;
 }
 
@@ -792,6 +801,7 @@ readstdin(void) {
 
 void
 alarmhandler(int signum) {
+	(void)signum;
     exit(EXIT_SUCCESS);
 }
 

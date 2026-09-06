@@ -4,16 +4,22 @@
 include config.mk
 
 BUILDDIR = build
-PROTO_C = ${BUILDDIR}/xdg-shell-protocol.c \
-	${BUILDDIR}/xdg-output-unstable-v1-protocol.c \
+PROTO_C = ${BUILDDIR}/fractional-scale-v1-protocol.c \
+	${BUILDDIR}/viewporter-protocol.c \
+	${BUILDDIR}/xdg-shell-protocol.c \
 	${BUILDDIR}/wlr-layer-shell-unstable-v1-protocol.c
-PROTO_H = ${BUILDDIR}/xdg-shell-client-protocol.h \
-	${BUILDDIR}/xdg-output-unstable-v1-client-protocol.h \
+PROTO_H = ${BUILDDIR}/fractional-scale-v1-client-protocol.h \
+	${BUILDDIR}/viewporter-client-protocol.h \
 	${BUILDDIR}/wlr-layer-shell-unstable-v1-client-protocol.h
 DMENUOBJ = ${BUILDDIR}/dmenu.o ${BUILDDIR}/draw.o \
+	${BUILDDIR}/fractional-scale-v1-protocol.o \
+	${BUILDDIR}/viewporter-protocol.o \
 	${BUILDDIR}/xdg-shell-protocol.o \
-	${BUILDDIR}/xdg-output-unstable-v1-protocol.o \
 	${BUILDDIR}/wlr-layer-shell-unstable-v1-protocol.o
+
+FRACTIONAL_SCALE_XML = ${WAYLAND_PROTOCOLS}/staging/fractional-scale/fractional-scale-v1.xml
+VIEWPORTER_XML = ${WAYLAND_PROTOCOLS}/stable/viewporter/viewporter.xml
+XDG_SHELL_XML = ${WAYLAND_PROTOCOLS}/stable/xdg-shell/xdg-shell.xml
 
 all: options ${BUILDDIR}/dmenu-wl ${BUILDDIR}/dmenu-wl_path
 
@@ -27,33 +33,30 @@ ${BUILDDIR}/config.h:
 	mkdir -p ${BUILDDIR}
 	cp config.def.h $@
 
-${PROTO_C} ${PROTO_H}: protocols
-
-protocols:
+${BUILDDIR}:
 	mkdir -p ${BUILDDIR}
-	${WAYLAND_SCANNER} public-code \
-		${WAYLAND_PROTOCOLS}/stable/xdg-shell/xdg-shell.xml \
-		${BUILDDIR}/xdg-shell-protocol.c
-	${WAYLAND_SCANNER} client-header \
-		${WAYLAND_PROTOCOLS}/stable/xdg-shell/xdg-shell.xml \
-		${BUILDDIR}/xdg-shell-client-protocol.h
-	${WAYLAND_SCANNER} public-code \
-		${WAYLAND_PROTOCOLS}/unstable/xdg-output/xdg-output-unstable-v1.xml \
-		${BUILDDIR}/xdg-output-unstable-v1-protocol.c
-	${WAYLAND_SCANNER} client-header \
-		${WAYLAND_PROTOCOLS}/unstable/xdg-output/xdg-output-unstable-v1.xml \
-		${BUILDDIR}/xdg-output-unstable-v1-client-protocol.h
-	${WAYLAND_SCANNER} public-code wlr-layer-shell-unstable-v1.xml \
-		${BUILDDIR}/wlr-layer-shell-unstable-v1-protocol.c
-	${WAYLAND_SCANNER} client-header wlr-layer-shell-unstable-v1.xml \
-		${BUILDDIR}/wlr-layer-shell-unstable-v1-client-protocol.h
+
+${BUILDDIR}/fractional-scale-v1-protocol.c: ${FRACTIONAL_SCALE_XML} | ${BUILDDIR}
+	${WAYLAND_SCANNER} private-code $< $@
+${BUILDDIR}/fractional-scale-v1-client-protocol.h: ${FRACTIONAL_SCALE_XML} | ${BUILDDIR}
+	${WAYLAND_SCANNER} client-header $< $@
+${BUILDDIR}/viewporter-protocol.c: ${VIEWPORTER_XML} | ${BUILDDIR}
+	${WAYLAND_SCANNER} private-code $< $@
+${BUILDDIR}/viewporter-client-protocol.h: ${VIEWPORTER_XML} | ${BUILDDIR}
+	${WAYLAND_SCANNER} client-header $< $@
+${BUILDDIR}/xdg-shell-protocol.c: ${XDG_SHELL_XML} | ${BUILDDIR}
+	${WAYLAND_SCANNER} private-code $< $@
+${BUILDDIR}/wlr-layer-shell-unstable-v1-protocol.c: wlr-layer-shell-unstable-v1.xml | ${BUILDDIR}
+	${WAYLAND_SCANNER} private-code $< $@
+${BUILDDIR}/wlr-layer-shell-unstable-v1-client-protocol.h: wlr-layer-shell-unstable-v1.xml | ${BUILDDIR}
+	${WAYLAND_SCANNER} client-header $< $@
 
 ${BUILDDIR}/%.o: %.c ${BUILDDIR}/config.h ${PROTO_H} config.mk draw.h
 	mkdir -p ${BUILDDIR}
-	${CC} -I${BUILDDIR} -c ${CFLAGS} -o $@ $<
+	${CC} -I${BUILDDIR} ${CPPFLAGS} ${CFLAGS} -c -o $@ $<
 
 ${BUILDDIR}/dmenu-wl: ${DMENUOBJ}
-	${CC} -o $@ ${DMENUOBJ} ${LDFLAGS}
+	${CC} ${LDFLAGS} -o $@ ${DMENUOBJ} ${LDLIBS}
 
 ${BUILDDIR}/dmenu-wl_path: ${BUILDDIR}/dmenu_path.o
 	${CC} -o $@ ${BUILDDIR}/dmenu_path.o
@@ -62,8 +65,6 @@ ${BUILDDIR}/dmenu-wl_path: ${BUILDDIR}/dmenu_path.o
 clean:
 	rm -rf ${BUILDDIR} dmenu-wl dmenu-wl_path dmenu-wl-${VERSION}.tar.gz \
 		config.h *.o \
-		xdg-shell-protocol.c xdg-shell-client-protocol.h \
-		xdg-output-unstable-v1-protocol.c xdg-output-unstable-v1-client-protocol.h \
 		wlr-layer-shell-unstable-v1-protocol.c \
 		wlr-layer-shell-unstable-v1-client-protocol.h
 
@@ -92,4 +93,4 @@ uninstall:
 		${DESTDIR}${PREFIX}/bin/dmenu-wl_run \
 		${DESTDIR}${MANPREFIX}/man1/dmenu-wl.1
 
-.PHONY: all options clean dist install uninstall protocols
+.PHONY: all options clean dist install uninstall

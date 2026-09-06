@@ -3,7 +3,6 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <fcntl.h>
-#include <time.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -11,6 +10,7 @@
 #include <string.h>
 #include <poll.h>
 #include <sys/mman.h>
+#include <linux/memfd.h>
 #include <sys/timerfd.h>
 #include <wayland-client.h>
 #include <wayland-client-protocol.h>
@@ -18,54 +18,27 @@
 #include <xkbcommon/xkbcommon.h>
 #include "draw.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
-#include "xdg-output-unstable-v1-client-protocol.h"
+#include "fractional-scale-v1-client-protocol.h"
+#include "viewporter-client-protocol.h"
 
 
 static const char overflow[] = "[buffer overflow]";
 static const int max_chars = 16384;
 
-struct monitor_info *monitors[16] = {0};
-static int n_monitors = 0;
-
 static bool dmenu_create_buffer(struct dmenu_panel *panel,
 		struct draw_buffer *buffer);
 static void dmenu_destroy_buffer(struct draw_buffer *buffer);
+
+static int32_t scaled_size(int32_t logical, uint32_t scale) {
+	return ((int64_t)logical * scale + 119) / 120;
+}
 
 int32_t round_to_int(double val) {
 	return (int32_t)(val + 0.5);
 }
 
-static void randname(char *buf) {
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
-	long r = ts.tv_nsec;
-	for (int i = 0; i < 6; ++i) {
-		buf[i] = 'A'+(r&15)+(r&16)*2;
-		r >>= 5;
-	}
-}
-
-static int anonymous_shm_open(void) {
-	char name[] = "/dmenu-XXXXXX";
-	int retries = 100;
-
-	do {
-		randname(name + strlen(name) - 6);
-
-		--retries;
-		// shm_open guarantees that O_CLOEXEC is set
-		int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
-		if (fd >= 0) {
-			shm_unlink(name);
-			return fd;
-		}
-	} while (retries > 0 && errno == EEXIST);
-
-	return -1;
-}
-
 int create_shm_file(off_t size) {
-	int fd = anonymous_shm_open();
+	int fd = memfd_create("dmenu-wl-buffer", MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	if (fd < 0) {
 		return fd;
 	}
@@ -163,8 +136,8 @@ void dmenu_draw(struct dmenu_panel *panel) {
 		panel->redraw_pending = true;
 		return;
 	}
-	int32_t pixel_width = panel->width * panel->monitor->scale;
-	int32_t pixel_height = panel->height * panel->monitor->scale;
+	int32_t pixel_width = scaled_size(panel->width, panel->preferred_scale);
+	int32_t pixel_height = scaled_size(panel->height, panel->preferred_scale);
 	if (!buffer->buffer || buffer->width != pixel_width ||
 			buffer->height != pixel_height) {
 		dmenu_destroy_buffer(buffer);
@@ -177,34 +150,19 @@ void dmenu_draw(struct dmenu_panel *panel) {
 	cairo_set_operator(cairo, CAIRO_OPERATOR_CLEAR);
 	cairo_paint(cairo);
 	cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
-	struct monitor_info *m = panel->monitor;
-	int32_t width = panel->width * m->scale;
-	int32_t height = panel->height * m->scale;
+	int32_t width = pixel_width;
+	int32_t height = pixel_height;
+	double scale = panel->preferred_scale / 120.0;
 
 	if (panel->draw) {
-		panel->draw(cairo, width, height, m->scale);
+		panel->draw(cairo, width, height, scale);
 	}
 	wl_surface_attach(panel->surface.surface, buffer->buffer, 0, 0);
 	buffer->busy = true;
-	wl_surface_damage(panel->surface.surface, 0, 0, panel->width, panel->height);
+	wl_surface_damage_buffer(panel->surface.surface, 0, 0, width, height);
+	wp_viewport_set_destination(panel->surface.viewport, panel->width, panel->height);
 	wl_surface_commit(panel->surface.surface);
 
-}
-
-cairo_subpixel_order_t to_cairo_subpixel_order(enum wl_output_subpixel subpixel) {
-	switch (subpixel) {
-	case WL_OUTPUT_SUBPIXEL_HORIZONTAL_RGB:
-		return CAIRO_SUBPIXEL_ORDER_RGB;
-	case WL_OUTPUT_SUBPIXEL_HORIZONTAL_BGR:
-		return CAIRO_SUBPIXEL_ORDER_BGR;
-	case WL_OUTPUT_SUBPIXEL_VERTICAL_RGB:
-		return CAIRO_SUBPIXEL_ORDER_VRGB;
-	case WL_OUTPUT_SUBPIXEL_VERTICAL_BGR:
-		return CAIRO_SUBPIXEL_ORDER_VBGR;
-	default:
-		return CAIRO_SUBPIXEL_ORDER_DEFAULT;
-	}
-	return CAIRO_SUBPIXEL_ORDER_DEFAULT;
 }
 
 void
@@ -243,6 +201,7 @@ static void layer_surface_configure(void *data,
 
 static void layer_surface_closed(void *_data,
 		struct zwlr_layer_surface_v1 *surface) {
+	(void)surface;
 	struct dmenu_panel *panel = _data;
 	panel->closed = true;
 	panel->running = false;
@@ -261,12 +220,22 @@ int32_t physical_height;
 static void output_geometry(void *data, struct wl_output *wl_output, int32_t x,
 		int32_t y, int32_t width_mm, int32_t height_mm, int32_t subpixel,
 		const char *make, const char *model, int32_t transform) {
+	(void)wl_output;
+	(void)x;
+	(void)y;
+	(void)width_mm;
+	(void)height_mm;
+	(void)make;
+	(void)model;
+	(void)transform;
 	struct monitor_info *monitor = data;
 	monitor->subpixel = subpixel;
 }
 
 static void output_mode(void *data, struct wl_output *wl_output, uint32_t flags,
 		int32_t width, int32_t height, int32_t refresh) {
+	(void)wl_output;
+	(void)refresh;
 	struct monitor_info *monitor = data;
 	if (flags & WL_OUTPUT_MODE_CURRENT) {
 		monitor->physical_width = width;
@@ -275,12 +244,29 @@ static void output_mode(void *data, struct wl_output *wl_output, uint32_t flags,
 }
 
 static void output_done(void *data, struct wl_output *wl_output) {
+	(void)data;
+	(void)wl_output;
 }
 
 static void output_scale(void *data, struct wl_output *wl_output,
 		int32_t factor) {
+	(void)wl_output;
 	struct monitor_info *monitor = data;
 	monitor->scale = factor;
+}
+
+static void output_name(void *data, struct wl_output *wl_output,
+		const char *name) {
+	(void)wl_output;
+	struct monitor_info *monitor = data;
+	snprintf(monitor->name, sizeof monitor->name, "%s", name);
+}
+
+static void output_description(void *data, struct wl_output *wl_output,
+		const char *description) {
+	(void)data;
+	(void)wl_output;
+	(void)description;
 }
 
 struct wl_output_listener output_listener = {
@@ -288,76 +274,86 @@ struct wl_output_listener output_listener = {
 	.mode = output_mode,
 	.done = output_done,
 	.scale = output_scale,
+	.name = output_name,
+	.description = output_description,
 };
-static void xdg_output_handle_logical_position(void *data,
-		struct zxdg_output_v1 *xdg_output, int32_t x, int32_t y) {
-	// Who cares
+
+static void fractional_scale_preferred(void *data,
+		struct wp_fractional_scale_v1 *fractional_scale, uint32_t scale) {
+	(void)fractional_scale;
+	struct dmenu_panel *panel = data;
+	if (panel->preferred_scale == scale)
+		return;
+	panel->preferred_scale = scale;
+	panel->redraw_pending = true;
+	if (panel->configured && panel->surface.buffers[0].buffer)
+		dmenu_draw(panel);
 }
 
-static void xdg_output_handle_logical_size(void *data,
-		struct zxdg_output_v1 *xdg_output, int32_t width, int32_t height) {
-	struct monitor_info *monitor = data;
-
-	monitor->logical_width = width;
-	monitor->logical_height = height;
-}
-
-static void xdg_output_handle_done(void *data,
-		struct zxdg_output_v1 *xdg_output) {
-	// Who cares
-}
-
-static void xdg_output_handle_name(void *data,
-		struct zxdg_output_v1 *xdg_output, const char *name) {
-	struct monitor_info *monitor = data;
-	strncpy(monitor->name, name, MAX_MONITOR_NAME_LEN - 1);
-	monitor->name[MAX_MONITOR_NAME_LEN - 1] = '\0';
-}
-
-static void xdg_output_handle_description(void *data,
-		struct zxdg_output_v1 *xdg_output, const char *description) {
-}
-
-struct zxdg_output_v1_listener xdg_output_listener = {
-	.logical_position = xdg_output_handle_logical_position,
-	.logical_size = xdg_output_handle_logical_size,
-	.done = xdg_output_handle_done,
-	.name = xdg_output_handle_name,
-	.description = xdg_output_handle_description,
+static const struct wp_fractional_scale_v1_listener fractional_scale_listener = {
+	.preferred_scale = fractional_scale_preferred,
 };
 
 static void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
 		uint32_t format, int32_t fd, uint32_t size) {
-
+	(void)wl_keyboard;
 	struct dmenu_panel *panel = data;
-
-	panel->keyboard.xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 
 	if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
 		close(fd);
-		exit(1);
+		eprintf("unsupported keyboard keymap format\n");
+	}
+	struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+	if (!context) {
+		close(fd);
+		eprintf("cannot create XKB context\n");
 	}
 	char *map_shm = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
 	if (map_shm == MAP_FAILED) {
 		close(fd);
-		exit(1);
+		xkb_context_unref(context);
+		eprintf("cannot map keyboard keymap\n");
 	}
-	panel->keyboard.xkb_keymap = xkb_keymap_new_from_string(
-			panel->keyboard.xkb_context, map_shm, XKB_KEYMAP_FORMAT_TEXT_V1, 0);
+	struct xkb_keymap *keymap = xkb_keymap_new_from_string(context, map_shm,
+			XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	munmap(map_shm, size);
 	close(fd);
+	struct xkb_state *state = keymap ? xkb_state_new(keymap) : NULL;
+	if (!keymap || !state) {
+		xkb_state_unref(state);
+		xkb_keymap_unref(keymap);
+		xkb_context_unref(context);
+		eprintf("cannot compile keyboard keymap\n");
+	}
+	xkb_state_unref(panel->keyboard.xkb_state);
+	xkb_keymap_unref(panel->keyboard.xkb_keymap);
+	xkb_context_unref(panel->keyboard.xkb_context);
+	panel->keyboard.xkb_context = context;
+	panel->keyboard.xkb_keymap = keymap;
+	panel->keyboard.xkb_state = state;
+}
 
-	panel->keyboard.xkb_state = xkb_state_new(panel->keyboard.xkb_keymap);
+static void cancel_key_repeat(struct dmenu_panel *panel) {
+	struct itimerspec spec = { 0 };
+	timerfd_settime(panel->repeat_timer, 0, &spec, NULL);
 }
 
 static void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
 		uint32_t serial, struct wl_surface *surface, struct wl_array *keys) {
-	// Who cares
+	(void)data;
+	(void)wl_keyboard;
+	(void)serial;
+	(void)surface;
+	(void)keys;
 }
 
 static void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
 		uint32_t serial, struct wl_surface *surface) {
-	// Who cares
+	(void)wl_keyboard;
+	(void)serial;
+	(void)surface;
+	struct dmenu_panel *panel = data;
+	cancel_key_repeat(panel);
 }
 
 static void keyboard_repeat(struct dmenu_panel *panel) {
@@ -366,14 +362,19 @@ static void keyboard_repeat(struct dmenu_panel *panel) {
 	}
 
 	struct itimerspec spec = { 0 };
-	spec.it_value.tv_sec = panel->repeat_period / 1000;
-	spec.it_value.tv_nsec = (panel->repeat_period % 1000) * 1000000l;
+	spec.it_value.tv_sec = panel->repeat_period_ns / 1000000000;
+	spec.it_value.tv_nsec = panel->repeat_period_ns % 1000000000;
 	timerfd_settime(panel->repeat_timer, 0, &spec, NULL);
 }
 
 static void keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
 		uint32_t serial, uint32_t time, uint32_t key, uint32_t _key_state) {
+	(void)wl_keyboard;
+	(void)serial;
+	(void)time;
 	struct dmenu_panel *panel = data;
+	if (!panel->keyboard.xkb_state || !panel->keyboard.xkb_keymap)
+		return;
 
 	enum wl_keyboard_key_state key_state = _key_state;
 	xkb_keysym_t sym = xkb_state_key_get_one_sym(panel->keyboard.xkb_state, key + 8);
@@ -381,7 +382,8 @@ static void keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
 		panel->on_keyevent(panel, key_state, sym, panel->keyboard.control,
 						   panel->keyboard.shift);
 
-		if (key_state == WL_KEYBOARD_KEY_STATE_PRESSED && panel->repeat_period >= 0 &&
+		if (key_state == WL_KEYBOARD_KEY_STATE_PRESSED &&
+				panel->repeat_period_ns > 0 &&
 				xkb_keymap_key_repeats(panel->keyboard.xkb_keymap, key + 8)) {
 			panel->repeat_key_state = key_state;
 			panel->repeat_sym = sym;
@@ -393,20 +395,20 @@ static void keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
 			timerfd_settime(panel->repeat_timer, 0, &spec, NULL);
 		} else if (key_state == WL_KEYBOARD_KEY_STATE_RELEASED &&
 				key == panel->repeat_key) {
-			struct itimerspec spec = { 0 };
-			timerfd_settime(panel->repeat_timer, 0, &spec, NULL);
+			cancel_key_repeat(panel);
 		}
 	}
 }
 
 static void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
 		int32_t rate, int32_t delay) {
+	(void)wl_keyboard;
 	struct dmenu_panel *panel = data;
 	panel->repeat_delay = delay;
 	if (rate > 0) {
-		panel->repeat_period = 1000 / rate;
+		panel->repeat_period_ns = 1000000000LL / rate;
 	} else {
-		panel->repeat_period = -1;
+		panel->repeat_period_ns = 0;
 	}
 }
 
@@ -414,6 +416,8 @@ static void keyboard_modifiers (void *data, struct wl_keyboard *keyboard,
 								uint32_t serial, uint32_t mods_depressed,
 								uint32_t mods_latched, uint32_t mods_locked,
 								uint32_t group) {
+	(void)keyboard;
+	(void)serial;
 	struct dmenu_panel *panel = data;
 	xkb_state_update_mask(panel->keyboard.xkb_state,
 		mods_depressed, mods_latched, mods_locked, 0, 0, group);
@@ -436,14 +440,20 @@ static const struct wl_keyboard_listener keyboard_listener = {
 static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
 		enum wl_seat_capability caps) {
 	struct dmenu_panel *panel = data;
-	if (caps & WL_SEAT_CAPABILITY_KEYBOARD) {
-		panel->keyboard.kbd = wl_seat_get_keyboard (panel->display_info.seat);
-		wl_keyboard_add_listener (panel->keyboard.kbd, &keyboard_listener, panel);
+	if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !panel->keyboard.kbd) {
+		panel->keyboard.kbd = wl_seat_get_keyboard(wl_seat);
+		wl_keyboard_add_listener(panel->keyboard.kbd, &keyboard_listener, panel);
+	} else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && panel->keyboard.kbd) {
+		cancel_key_repeat(panel);
+		wl_keyboard_release(panel->keyboard.kbd);
+		panel->keyboard.kbd = NULL;
 	}
 }
 static void seat_handle_name(void *data, struct wl_seat *wl_seat,
 		const char *name) {
-	// Who cares
+	(void)data;
+	(void)wl_seat;
+	(void)name;
 }
 
 const struct wl_seat_listener seat_listener = {
@@ -451,61 +461,91 @@ const struct wl_seat_listener seat_listener = {
 	.name = seat_handle_name,
 };
 
-void set_monitor_xdg_output(struct dmenu_panel *panel, struct monitor_info *monitor){
-	monitor->xdg_output =
-		zxdg_output_manager_v1_get_xdg_output(panel->display_info.xdg_output_manager,
-												monitor->output);
-	zxdg_output_v1_add_listener(monitor->xdg_output, &xdg_output_listener,
-								monitor);
-}
-
 static void handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
 	struct dmenu_panel *panel = data;
 
 	if (strcmp(interface, wl_compositor_interface.name) == 0) {
-		panel->display_info.compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
+		if (version < 4)
+			eprintf("wl_compositor version 4 is required\n");
+		panel->display_info.compositor = wl_registry_bind(registry, name,
+				&wl_compositor_interface, 4);
 	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
-		panel->display_info.seat = wl_registry_bind (registry, name, &wl_seat_interface, 4);
-		wl_seat_add_listener (panel->display_info.seat, &seat_listener, panel);
+		if (panel->display_info.seat)
+			return;
+		if (version < 5)
+			eprintf("wl_seat version 5 is required\n");
+		panel->display_info.seat = wl_registry_bind(registry, name,
+				&wl_seat_interface, 5);
+		panel->display_info.seat_registry_name = name;
+		wl_seat_add_listener(panel->display_info.seat, &seat_listener, panel);
 	} else if (strcmp(interface, wl_shm_interface.name) == 0) {
 		panel->surface.shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
 	} else if (strcmp(interface, wl_output_interface.name) == 0) {
-
-		if(n_monitors >= 16) return;
-
-		monitors[n_monitors] = calloc(1, sizeof(struct monitor_info));
-		monitors[n_monitors]->panel = panel;
-		monitors[n_monitors]->scale = 1;
-		monitors[n_monitors]->output = wl_registry_bind(registry, name, &wl_output_interface, 2);
-
-		wl_output_add_listener(monitors[n_monitors]->output, &output_listener,
-							   monitors[n_monitors]);
-
-		if (panel->display_info.xdg_output_manager != NULL) {
-			set_monitor_xdg_output(panel, monitors[n_monitors]);
-		}
-		n_monitors++;
-
+		if (version < 4)
+			eprintf("wl_output version 4 is required\n");
+		struct monitor_info *monitor = calloc(1, sizeof *monitor);
+		if (!monitor)
+			eprintf("cannot allocate output state\n");
+		monitor->registry_name = name;
+		monitor->panel = panel;
+		monitor->scale = 1;
+		monitor->output = wl_registry_bind(registry, name,
+				&wl_output_interface, 4);
+		struct monitor_info **link = &panel->display_info.monitors;
+		while (*link)
+			link = &(*link)->next;
+		*link = monitor;
+		wl_output_add_listener(monitor->output, &output_listener, monitor);
 	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
-		panel->surface.layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 1);
-
-	} else if (strcmp(interface, zxdg_output_manager_v1_interface.name) == 0) {
-		panel->display_info.xdg_output_manager = wl_registry_bind(registry, name,
-			&zxdg_output_manager_v1_interface, 2);
-
-		for(int m = 0; m < n_monitors; m++){
-			set_monitor_xdg_output(panel, monitors[m]);
-		}
+		if (version < 4)
+			eprintf("wlr-layer-shell version 4 is required\n");
+		panel->surface.layer_shell = wl_registry_bind(registry, name,
+				&zwlr_layer_shell_v1_interface, 4);
+	} else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
+		panel->display_info.fractional_scale_manager = wl_registry_bind(registry,
+				name, &wp_fractional_scale_manager_v1_interface, 1);
+	} else if (strcmp(interface, wp_viewporter_interface.name) == 0) {
+		panel->display_info.viewporter = wl_registry_bind(registry, name,
+				&wp_viewporter_interface, 1);
 	}
-
 }
 
 static void handle_global_remove(void *data, struct wl_registry *registry,
 		uint32_t name) {
+	(void)registry;
+	struct dmenu_panel *panel = data;
+	if (name == panel->display_info.seat_registry_name) {
+		cancel_key_repeat(panel);
+		if (panel->keyboard.kbd)
+			wl_keyboard_release(panel->keyboard.kbd);
+		panel->keyboard.kbd = NULL;
+		wl_seat_release(panel->display_info.seat);
+		panel->display_info.seat = NULL;
+		panel->running = false;
+		return;
+	}
+	struct monitor_info **link = &panel->display_info.monitors;
+	while (*link) {
+		struct monitor_info *monitor = *link;
+		if (monitor->registry_name != name) {
+			link = &monitor->next;
+			continue;
+		}
+		if (panel->monitor == monitor) {
+			panel->monitor = NULL;
+			panel->redraw_pending = false;
+			panel->running = false;
+		}
+		*link = monitor->next;
+		wl_output_release(monitor->output);
+		free(monitor);
+		return;
+	}
 }
 
 static void buffer_release(void *data, struct wl_buffer *wl_buffer) {
+	(void)wl_buffer;
 	struct draw_buffer *buffer = data;
 	buffer->busy = false;
 	if (buffer->panel->redraw_pending)
@@ -531,9 +571,8 @@ dmenu_destroy_buffer(struct draw_buffer *buffer) {
 
 static bool dmenu_create_buffer(struct dmenu_panel *panel,
 		struct draw_buffer *draw_buffer) {
-	struct monitor_info *m = panel->monitor;
-	int64_t scaled_width = (int64_t)panel->width * m->scale;
-	int64_t scaled_height = (int64_t)panel->height * m->scale;
+	int64_t scaled_width = scaled_size(panel->width, panel->preferred_scale);
+	int64_t scaled_height = scaled_size(panel->height, panel->preferred_scale);
 	if (scaled_width <= 0 || scaled_height <= 0 ||
 			scaled_width > INT32_MAX / 4 || scaled_height > INT32_MAX)
 		return false;
@@ -575,15 +614,19 @@ static bool dmenu_create_buffer(struct dmenu_panel *panel,
 	wl_buffer_add_listener(draw_buffer->buffer, &buffer_listener, draw_buffer);
 
 	cairo_surface_t *s = cairo_image_surface_create_for_data(draw_buffer->data,
-															 CAIRO_FORMAT_ARGB32,
-															 width, height, width * 4);
+													 CAIRO_FORMAT_ARGB32,
+													 width, height, width * 4);
 	draw_buffer->cairo = cairo_create(s);
 	draw_buffer->cairo_surface = s;
+	if (cairo_surface_status(s) != CAIRO_STATUS_SUCCESS ||
+			cairo_status(draw_buffer->cairo) != CAIRO_STATUS_SUCCESS) {
+		dmenu_destroy_buffer(draw_buffer);
+		return false;
+	}
 	cairo_set_antialias(draw_buffer->cairo, CAIRO_ANTIALIAS_BEST);
 	cairo_font_options_t *fo = cairo_font_options_create();
 	cairo_font_options_set_hint_style(fo, CAIRO_HINT_STYLE_FULL);
-	cairo_font_options_set_antialias(fo, CAIRO_ANTIALIAS_SUBPIXEL);
-	cairo_font_options_set_subpixel_order(fo, to_cairo_subpixel_order(m->subpixel));
+	cairo_font_options_set_antialias(fo, CAIRO_ANTIALIAS_GRAY);
 	cairo_set_font_options(draw_buffer->cairo, fo);
 	cairo_font_options_destroy(fo);
 	cairo_save(draw_buffer->cairo);
@@ -616,32 +659,35 @@ void dmenu_init_panel(struct dmenu_panel *panel, int32_t width, int32_t height,
 	panel->configured = false;
 	panel->closed = false;
 	panel->redraw_pending = false;
+	panel->preferred_scale = 120;
+	panel->repeat_period_ns = 0;
 	panel->keyboard.control = false;
 	panel->on_keyevent = NULL;
 
-	struct wl_registry *registry = wl_display_get_registry(panel->display_info.display);
-	wl_registry_add_listener(registry, &registry_listener, panel);
+	panel->display_info.registry = wl_display_get_registry(panel->display_info.display);
+	wl_registry_add_listener(panel->display_info.registry, &registry_listener, panel);
 
-	wl_display_roundtrip(panel->display_info.display);
-
-	/* Second roundtrip for xdg-output. Will populate display dimensions. */
-	wl_display_roundtrip(panel->display_info.display);
-
-
-	panel->surface.surface = wl_compositor_create_surface(panel->display_info.compositor);
+	if (wl_display_roundtrip(panel->display_info.display) < 0)
+		eprintf("cannot enumerate Wayland globals\n");
+	if (wl_display_roundtrip(panel->display_info.display) < 0)
+		eprintf("cannot read Wayland output metadata\n");
+	if (!panel->display_info.compositor || !panel->surface.shm ||
+			!panel->surface.layer_shell ||
+			!panel->display_info.fractional_scale_manager ||
+			!panel->display_info.viewporter)
+		eprintf("compositor lacks a required modern Wayland protocol\n");
+	if (interactive && !panel->display_info.seat)
+		eprintf("compositor did not advertise a keyboard seat\n");
 
 	panel->monitor = NULL;
-	if (!panel->selected_monitor_name && panel->selected_monitor >= 0 &&
-			panel->selected_monitor < n_monitors) {
-		panel->monitor = monitors[panel->selected_monitor];
-	} else {
-		for (int i = 0; i < n_monitors; ++i) {
-			if (monitors[i] && !strncmp(panel->selected_monitor_name,
-										monitors[i]->name,
-										MAX_MONITOR_NAME_LEN)) {
-				panel->monitor = monitors[i];
-				break;
-			}
+	int index = 0;
+	for (struct monitor_info *monitor = panel->display_info.monitors; monitor;
+			monitor = monitor->next, index++) {
+		if ((!panel->selected_monitor_name && index == panel->selected_monitor) ||
+				(panel->selected_monitor_name &&
+				 strcmp(panel->selected_monitor_name, monitor->name) == 0)) {
+			panel->monitor = monitor;
+			break;
 		}
 	}
 	if (!panel->monitor) {
@@ -650,16 +696,15 @@ void dmenu_init_panel(struct dmenu_panel *panel, int32_t width, int32_t height,
 		else
 		eprintf("No monitor with name %s available.\n", panel->selected_monitor_name);
 	}
-	if (!panel->monitor->logical_width || !panel->monitor->logical_height)
-		eprintf("selected monitor has no logical dimensions\n");
-	if (!panel->bar)
-		panel->width = panel->width < panel->monitor->logical_width
-			? panel->width : panel->monitor->logical_width;
-	panel->height = panel->height < panel->monitor->logical_height
-		? panel->height : panel->monitor->logical_height;
-
-	if (!panel->surface.layer_shell)
-		eprintf("Compositor does not implement wlr-layer-shell protocol.\n");
+	panel->surface.surface = wl_compositor_create_surface(panel->display_info.compositor);
+	panel->surface.viewport = wp_viewporter_get_viewport(
+			panel->display_info.viewporter, panel->surface.surface);
+	panel->surface.fractional_scale =
+		wp_fractional_scale_manager_v1_get_fractional_scale(
+				panel->display_info.fractional_scale_manager,
+				panel->surface.surface);
+	wp_fractional_scale_v1_add_listener(panel->surface.fractional_scale,
+			&fractional_scale_listener, panel);
 	panel->surface.layer_surface =
 		zwlr_layer_shell_v1_get_layer_surface(panel->surface.layer_shell,
 											  panel->surface.surface,
@@ -680,10 +725,9 @@ void dmenu_init_panel(struct dmenu_panel *panel, int32_t width, int32_t height,
 	zwlr_layer_surface_v1_add_listener(panel->surface.layer_surface,
 									   &layer_surface_listener, panel);
 	zwlr_layer_surface_v1_set_keyboard_interactivity(panel->surface.layer_surface,
-			interactive);
+			interactive ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE :
+			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
 
-	wl_surface_set_buffer_scale(panel->surface.surface,
-								panel->monitor->scale);
 	wl_surface_commit(panel->surface.surface);
 	while (!panel->configured && !panel->closed &&
 			wl_display_dispatch(panel->display_info.display) >= 0)
@@ -703,47 +747,104 @@ void dmenu_show(struct dmenu_panel *dmenu) {
 	dmenu_draw(dmenu);
 
 	struct pollfd fds[] = {
-		{ wl_display_get_fd(dmenu->display_info.display), POLLIN },
-		{ dmenu->repeat_timer, POLLIN },
+		{ .fd = wl_display_get_fd(dmenu->display_info.display), .events = POLLIN },
+		{ .fd = dmenu->repeat_timer, .events = POLLIN },
 	};
 	const int nfds = sizeof(fds) / sizeof(*fds);
 
-	wl_display_flush(dmenu->display_info.display);
-
 	dmenu->running = true;
 	while (dmenu->running) {
+		while (wl_display_prepare_read(dmenu->display_info.display) != 0) {
+			if (wl_display_dispatch_pending(dmenu->display_info.display) < 0) {
+				dmenu->running = false;
+				break;
+			}
+		}
+		if (!dmenu->running)
+			break;
+
 		fds[0].events = POLLIN;
 		if (wl_display_flush(dmenu->display_info.display) < 0) {
 			if (errno == EAGAIN)
 				fds[0].events |= POLLOUT;
-			else
+			else {
+				wl_display_cancel_read(dmenu->display_info.display);
 				break;
+			}
 		}
 
 		if (poll(fds, nfds, -1) < 0) {
+			wl_display_cancel_read(dmenu->display_info.display);
 			if (errno == EINTR)
 				continue;
 			break;
 		}
 
 		if (fds[0].revents & POLLIN) {
-			if (wl_display_dispatch(dmenu->display_info.display) < 0) {
+			if (wl_display_read_events(dmenu->display_info.display) < 0)
 				dmenu->running = false;
-			}
+		} else {
+			wl_display_cancel_read(dmenu->display_info.display);
 		}
+		if (fds[0].revents & (POLLERR | POLLHUP | POLLNVAL))
+			dmenu->running = false;
+		if (dmenu->running &&
+				wl_display_dispatch_pending(dmenu->display_info.display) < 0)
+			dmenu->running = false;
 
 		if (fds[1].revents & POLLIN) {
 			uint64_t expirations;
-			if (read(dmenu->repeat_timer, &expirations, sizeof expirations) < 0 &&
-					errno != EAGAIN)
+			ssize_t bytes = read(dmenu->repeat_timer, &expirations,
+					sizeof expirations);
+			if (bytes != sizeof expirations)
 				break;
 			keyboard_repeat(dmenu);
 		}
 	}
 
-	/* dmenu_close called */
+	cancel_key_repeat(dmenu);
+	if (dmenu->keyboard.kbd)
+		wl_keyboard_release(dmenu->keyboard.kbd);
+	xkb_state_unref(dmenu->keyboard.xkb_state);
+	xkb_keymap_unref(dmenu->keyboard.xkb_keymap);
+	xkb_context_unref(dmenu->keyboard.xkb_context);
+	for (size_t i = 0; i < 2; i++)
+		dmenu_destroy_buffer(&dmenu->surface.buffers[i]);
+	if (dmenu->surface.fractional_scale)
+		wp_fractional_scale_v1_destroy(dmenu->surface.fractional_scale);
+	if (dmenu->surface.viewport)
+		wp_viewport_destroy(dmenu->surface.viewport);
+	if (dmenu->surface.layer_surface)
+		zwlr_layer_surface_v1_destroy(dmenu->surface.layer_surface);
+	if (dmenu->surface.surface)
+		wl_surface_destroy(dmenu->surface.surface);
+	struct monitor_info *monitor = dmenu->display_info.monitors;
+	while (monitor) {
+		struct monitor_info *next = monitor->next;
+		wl_output_release(monitor->output);
+		free(monitor);
+		monitor = next;
+	}
+	if (dmenu->keyboard.kbd)
+		dmenu->keyboard.kbd = NULL;
+	if (dmenu->display_info.seat)
+		wl_seat_release(dmenu->display_info.seat);
+	if (dmenu->display_info.fractional_scale_manager)
+		wp_fractional_scale_manager_v1_destroy(
+				dmenu->display_info.fractional_scale_manager);
+	if (dmenu->display_info.viewporter)
+		wp_viewporter_destroy(dmenu->display_info.viewporter);
+	if (dmenu->surface.layer_shell)
+		zwlr_layer_shell_v1_destroy(dmenu->surface.layer_shell);
+	if (dmenu->surface.shm)
+		wl_shm_release(dmenu->surface.shm);
+	if (dmenu->display_info.compositor)
+		wl_compositor_destroy(dmenu->display_info.compositor);
+	if (dmenu->display_info.registry)
+		wl_registry_destroy(dmenu->display_info.registry);
+	close(dmenu->repeat_timer);
+	wl_display_flush(dmenu->display_info.display);
 	wl_display_disconnect(dmenu->display_info.display);
-
 }
 void dmenu_close(struct dmenu_panel *dmenu) {
 	dmenu->running = false;
