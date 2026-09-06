@@ -14,8 +14,7 @@
         # Compiler and build tools
         nativeBuildInputs = with pkgs; [
           gcc
-          meson
-          ninja
+          gnumake
           pkg-config
           wayland-scanner
         ];

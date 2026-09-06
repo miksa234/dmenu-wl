@@ -27,10 +27,8 @@ Required libraries (and headers):
 
 ## Installation
 ```
-    mkdir build
-    meson build
-    ninja -C build
-    sudo ninja -C build install
+    make
+    sudo make install
 ```
 
 ## Running dmenu-wl ...
