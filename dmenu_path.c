@@ -1,5 +1,6 @@
 /* See LICENSE file for copyright and license details. */
 #include <dirent.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,31 +8,57 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define CACHE ".cache/dmenu_run"
-
 static void die (const char *s);
+static void printcache (void);
 static int qstrcmp (const void *a, const void *b);
 static void scan (void);
 static int uptodate (void);
 
 static char **items = NULL;
-static const char *home, *path;
+static char cachepath[PATH_MAX];
+static char cachedirbuf[PATH_MAX];
+static const char *path;
 
 int
 main (void)
 {
-    if (!(home = getenv ("HOME")))
-        die ("no $HOME");
+    const char *cachedir = getenv ("XDG_CACHE_HOME");
+    if (!cachedir || !*cachedir) {
+        const char *home = getenv ("HOME");
+        if (!home)
+            die ("no $HOME");
+        if (snprintf (cachedirbuf, sizeof cachedirbuf, "%s/.cache", home)
+            >= (int)sizeof cachedirbuf)
+            die ("cache path too long");
+        cachedir = cachedirbuf;
+    }
     if (!(path = getenv ("PATH")))
         die ("no $PATH");
-    if (chdir (home) < 0)
-        die ("chdir failed");
+    if (mkdir (cachedir, 0700) < 0 && errno != EEXIST)
+        die ("cannot create cache directory");
+    if (snprintf (cachepath, sizeof cachepath, "%s/dmenu_run", cachedir)
+        >= (int)sizeof cachepath)
+        die ("cache path too long");
     if (uptodate ()) {
-        execlp ("cat", "cat", CACHE, NULL);
-        die ("exec failed");
+        printcache ();
+        return EXIT_SUCCESS;
     }
     scan ();
     return EXIT_SUCCESS;
+}
+
+void
+printcache (void)
+{
+    char buf[BUFSIZ];
+    FILE *cache = fopen (cachepath, "r");
+    if (!cache)
+        die ("cannot read cache");
+    while (fgets (buf, sizeof buf, cache))
+        fputs (buf, stdout);
+    if (ferror (cache))
+        die ("cannot read cache");
+    fclose (cache);
 }
 
 void
@@ -54,6 +81,7 @@ scan (void)
     char *dir, *p;
     size_t i, count;
     struct dirent *ent;
+    struct stat st;
     DIR *dp;
     FILE *cache;
 
@@ -64,8 +92,10 @@ scan (void)
         if (!(dp = opendir (dir)))
             continue;
         while ((ent = readdir (dp))) {
-            snprintf (buf, sizeof buf, "%s/%s", dir, ent->d_name);
-            if (ent->d_name[0] == '.' || access (buf, X_OK) < 0)
+            if (snprintf (buf, sizeof buf, "%s/%s", dir, ent->d_name)
+                    >= (int)sizeof buf
+                || ent->d_name[0] == '.' || stat (buf, &st) < 0
+                || !S_ISREG (st.st_mode) || access (buf, X_OK) < 0)
                 continue;
             if (!(items = realloc (items, ++count * sizeof *items)))
                 die ("malloc failed");
@@ -75,7 +105,7 @@ scan (void)
         closedir (dp);
     }
     qsort (items, count, sizeof *items, qstrcmp);
-    if (!(cache = fopen (CACHE, "w")))
+    if (!(cache = fopen (cachepath, "w")))
         die ("open failed");
     for (i = 0; i < count; i++) {
         if (i > 0 && !strcmp (items[i], items[i - 1]))
@@ -94,14 +124,16 @@ uptodate (void)
     time_t mtime;
     struct stat st;
 
-    if (stat (CACHE, &st) < 0)
+    if (stat (cachepath, &st) < 0)
         return 0;
     mtime = st.st_mtime;
     if (!(p = strdup (path)))
         die ("strdup failed");
     for (dir = strtok (p, ":"); dir; dir = strtok (NULL, ":"))
-        if (!stat (dir, &st) && st.st_mtime > mtime)
+        if (!stat (dir, &st) && st.st_mtime > mtime) {
+            free (p);
             return 0;
+        }
     free (p);
     return 1;
 }
