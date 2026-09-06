@@ -17,6 +17,12 @@ enum { ColBG, ColFG, ColBorder, ColLast };
 
 struct dmenu_panel;
 
+enum dmenu_position {
+  DMENU_POSITION_CENTER,
+  DMENU_POSITION_TOP,
+  DMENU_POSITION_BOTTOM
+};
+
 struct draw_buffer {
   struct dmenu_panel *panel;
   cairo_t *cairo;
@@ -95,8 +101,7 @@ struct dmenu_panel {
 
   int32_t width;
   int32_t height;
-  bool bar;
-  bool bottom;
+  enum dmenu_position position;
   bool interactive;
   bool configured;
   bool closed;
@@ -113,7 +118,8 @@ struct dmenu_panel {
   bool running;
 };
 
-void dmenu_init_panel(struct dmenu_panel *, int32_t, int32_t, bool, bool, bool);
+void dmenu_init_panel(struct dmenu_panel *, int32_t, int32_t,
+                      enum dmenu_position, bool);
 void dmenu_draw(struct dmenu_panel *);
 void dmenu_show(struct dmenu_panel *);
 void dmenu_close(struct dmenu_panel *);

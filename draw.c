@@ -640,7 +640,7 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 void dmenu_init_panel(struct dmenu_panel *panel, int32_t width, int32_t height,
-                      bool bar, bool bottom, bool interactive) {
+                      enum dmenu_position position, bool interactive) {
   if (!setlocale(LC_CTYPE, ""))
     weprintf("no locale support\n");
 
@@ -652,8 +652,7 @@ void dmenu_init_panel(struct dmenu_panel *panel, int32_t width, int32_t height,
 
   panel->width = width;
   panel->height = height;
-  panel->bar = bar;
-  panel->bottom = bottom;
+  panel->position = position;
   panel->interactive = interactive;
   panel->configured = false;
   panel->closed = false;
@@ -711,14 +710,16 @@ void dmenu_init_panel(struct dmenu_panel *panel, int32_t width, int32_t height,
       panel->surface.layer_shell, panel->surface.surface,
       panel->monitor->output, ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "dmenu-wl");
 
+  bool bar = position != DMENU_POSITION_CENTER;
   zwlr_layer_surface_v1_set_size(panel->surface.layer_surface,
                                  bar ? 0 : panel->width, panel->height);
   if (bar)
     zwlr_layer_surface_v1_set_anchor(
         panel->surface.layer_surface,
         ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT |
-            (bottom ? ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM
-                    : ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP));
+            (position == DMENU_POSITION_BOTTOM
+                 ? ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM
+                 : ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP));
 
   zwlr_layer_surface_v1_add_listener(panel->surface.layer_surface,
                                      &layer_surface_listener, panel);

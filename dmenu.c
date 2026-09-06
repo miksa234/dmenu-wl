@@ -1,6 +1,6 @@
 /* See LICENSE file for copyright and license details. */
-#include "config.h"
 #include "draw.h"
+#include "config.h"
 #include <ctype.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -63,8 +63,7 @@ static const char *prompt = NULL;
 static bool message = false;
 static bool nostdin = false;
 static bool returnearly = false;
-static bool show_in_bottom = false;
-static bool show_as_bar = false;
+static enum dmenu_position panel_position;
 static bool done = false;
 static TextPosition messageposition = LEFT;
 static Item *items = NULL;
@@ -534,6 +533,7 @@ int main(int argc, char **argv) {
   int i;
 
   progname = "dmenu";
+  panel_position = position;
   for (i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--version")) {
       fputs("dmenu-wl-" VERSION
@@ -541,9 +541,11 @@ int main(int argc, char **argv) {
             stdout);
       exit(EXIT_SUCCESS);
     } else if (!strcmp(argv[i], "-b") || !strcmp(argv[i], "--bottom"))
-      show_as_bar = show_in_bottom = true;
+      panel_position = DMENU_POSITION_BOTTOM;
     else if (!strcmp(argv[i], "-t") || !strcmp(argv[i], "--top"))
-      show_as_bar = true, show_in_bottom = false;
+      panel_position = DMENU_POSITION_TOP;
+    else if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "--center"))
+      panel_position = DMENU_POSITION_CENTER;
     else if (!strcmp(argv[i], "-e") || !strcmp(argv[i], "--echo"))
       message = true;
     else if (!strcmp(argv[i], "-ec") || !strcmp(argv[i], "--echo-centre"))
@@ -621,8 +623,7 @@ int main(int argc, char **argv) {
   struct dmenu_panel dmenu = {0};
   dmenu.selected_monitor = selected_monitor;
   dmenu.selected_monitor_name = selected_monitor_name;
-  dmenu_init_panel(&dmenu, menu_width, menu_height, show_as_bar, show_in_bottom,
-                   !message);
+  dmenu_init_panel(&dmenu, menu_width, menu_height, panel_position, !message);
 
   dmenu.on_keyevent = keypress;
   dmenu.on_keyrepeat = keyrepeat;
@@ -812,6 +813,7 @@ void usage(void) {
   printf("  -b,  --bottom                     dmenu appears at the bottom of "
          "the screen\n");
   printf("  -t,  --top                        dmenu appears as a top bar\n");
+  printf("  -c,  --center                     dmenu appears centered\n");
   printf("  -h,  --height N                   set dmenu to be N pixels high\n");
   printf("  -i,  --insensitive                dmenu matches menu items case "
          "insensitively\n");
